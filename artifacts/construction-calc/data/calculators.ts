@@ -2256,6 +2256,1012 @@ const compactionPasses: Calculator = {
   },
 };
 
+// ─── DRYWALL ─────────────────────────────────────────────────────────────────
+
+const drywallSheets: Calculator = {
+  id: "drywall-sheets",
+  name: "Drywall Sheets",
+  description: "4×8 or 4×12 sheets for walls and ceilings",
+  inputs: [
+    { id: "wallArea", label: "Total Wall Area", unit: "ft²", type: "number", defaultValue: "800", min: 0 },
+    { id: "ceilingArea", label: "Ceiling Area", unit: "ft²", type: "number", defaultValue: "400", min: 0 },
+    { id: "doors", label: "Doors (3/0×6/8)", unit: "ea", type: "number", defaultValue: "3", min: 0 },
+    { id: "windows", label: "Windows", unit: "ea", type: "number", defaultValue: "6", min: 0 },
+    {
+      id: "sheetSize", label: "Sheet Size", unit: "", type: "select",
+      options: [
+        { label: "4×8 (32 ft²)", value: "32" },
+        { label: "4×9 (36 ft²)", value: "36" },
+        { label: "4×12 (48 ft²)", value: "48" },
+      ],
+      defaultValue: "32",
+    },
+    { id: "waste", label: "Waste", unit: "%", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const walls = parseFloat(inputs.wallArea) || 0;
+    const ceiling = parseFloat(inputs.ceilingArea) || 0;
+    const doors = parseFloat(inputs.doors) || 0;
+    const windows = parseFloat(inputs.windows) || 0;
+    const sheetSqFt = parseFloat(inputs.sheetSize) || 32;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    const openings = doors * 20 + windows * 15;
+    const netArea = (walls + ceiling - openings) * waste;
+    const sheets = Math.ceil(netArea / sheetSqFt);
+    return [
+      { label: "Sheets Needed", value: sheets, unit: "sheets", highlight: true },
+      { label: "Net Area", value: Math.round(netArea), unit: "ft²" },
+      { label: "Gross Area", value: Math.round(walls + ceiling), unit: "ft²" },
+      { label: "Openings Deducted", value: Math.round(openings), unit: "ft²" },
+    ];
+  },
+};
+
+const jointCompound: Calculator = {
+  id: "joint-compound",
+  name: "Joint Compound (Mud)",
+  description: "Buckets of mud and tape for finishing drywall",
+  inputs: [
+    { id: "sheets", label: "Number of Sheets", unit: "sheets", type: "number", defaultValue: "50", min: 0 },
+    {
+      id: "coats", label: "Finish Level", unit: "", type: "select",
+      options: [
+        { label: "Level 3 (2 coats tape + 1 skim)", value: "3" },
+        { label: "Level 4 (3 coats — standard)", value: "4" },
+        { label: "Level 5 (full skim coat)", value: "5" },
+      ],
+      defaultValue: "4",
+    },
+  ],
+  calculate: (inputs) => {
+    const sheets = parseFloat(inputs.sheets) || 0;
+    const level = parseFloat(inputs.coats) || 4;
+    // ~1 gallon per 100 sq ft per coat; 5-gal bucket = 64 lbs ≈ covers ~350 sq ft for 3 coats
+    const sqft = sheets * 32;
+    // Tape: ~2 LF joint per sqft of drywall (rough)
+    const tapeLF = sqft * 0.3;
+    const tapeRolls = Math.ceil(tapeLF / 500); // 500 ft rolls
+    // Mud: approx 1 bucket per 4 sheets at level 4
+    const mudFactor = level === 3 ? 3.5 : level === 4 ? 4 : 5;
+    const buckets5gal = Math.ceil(sheets / mudFactor);
+    const screws = Math.ceil(sheets * 32); // ~1 screw per ft²
+    return [
+      { label: "5-gal Buckets (mud)", value: buckets5gal, unit: "buckets", highlight: true },
+      { label: "Tape Rolls (500 ft)", value: tapeRolls, unit: "rolls" },
+      { label: "Drywall Screws", value: screws, unit: "screws" },
+      { label: "Total Area", value: Math.round(sqft), unit: "ft²" },
+    ];
+  },
+};
+
+const cornerBead: Calculator = {
+  id: "corner-bead",
+  name: "Corner Bead & Trim",
+  description: "Linear feet of metal or vinyl corner bead",
+  inputs: [
+    { id: "corners", label: "Outside Corners", unit: "ea", type: "number", defaultValue: "8", min: 0 },
+    { id: "height", label: "Wall / Ceiling Height", unit: "ft", type: "number", defaultValue: "9", min: 0 },
+    { id: "archways", label: "Archway LF (flexible bead)", unit: "LF", type: "number", defaultValue: "0", min: 0 },
+    {
+      id: "beadLength", label: "Bead Stock Length", unit: "", type: "select",
+      options: [
+        { label: "8 ft lengths", value: "8" },
+        { label: "9 ft lengths", value: "9" },
+        { label: "10 ft lengths", value: "10" },
+      ],
+      defaultValue: "9",
+    },
+  ],
+  calculate: (inputs) => {
+    const corners = parseFloat(inputs.corners) || 0;
+    const height = parseFloat(inputs.height) || 0;
+    const archLF = parseFloat(inputs.archways) || 0;
+    const stockLen = parseFloat(inputs.beadLength) || 9;
+    const cornerLF = corners * height;
+    const totalLF = cornerLF + archLF;
+    const pieces = Math.ceil(totalLF / stockLen);
+    return [
+      { label: "Corner Bead Pieces", value: pieces, unit: `${stockLen}-ft sticks`, highlight: true },
+      { label: "Total Linear Feet", value: Math.round(totalLF), unit: "LF" },
+      { label: "Corner LF", value: Math.round(cornerLF), unit: "LF" },
+    ];
+  },
+};
+
+const drywallLiftRental: Calculator = {
+  id: "drywall-crew-time",
+  name: "Hang Time Estimator",
+  description: "Estimated crew-hours to hang and finish drywall",
+  inputs: [
+    { id: "sheets", label: "Total Sheets", unit: "sheets", type: "number", defaultValue: "50", min: 1 },
+    {
+      id: "crewSize", label: "Crew Size", unit: "", type: "select",
+      options: [
+        { label: "1 Person", value: "1" },
+        { label: "2 People", value: "2" },
+        { label: "3 People", value: "3" },
+      ],
+      defaultValue: "2",
+    },
+    { id: "ceiling", label: "Ceiling Sheets (harder)", unit: "sheets", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const sheets = parseFloat(inputs.sheets) || 0;
+    const crew = parseFloat(inputs.crewSize) || 2;
+    const ceilSheets = parseFloat(inputs.ceiling) || 0;
+    const wallSheets = sheets - ceilSheets;
+    // Hanging: ~6 min per wall sheet, 15 min per ceiling sheet (1 person)
+    const hangHrs = (wallSheets * 6 + ceilSheets * 15) / 60;
+    // Finishing: ~3 min/sheet per coat × 3 coats
+    const finishHrs = sheets * 3 * 3 / 60;
+    const totalHrs = hangHrs + finishHrs;
+    const crewHrs = totalHrs / crew;
+    const days = Math.ceil(crewHrs / 8);
+    return [
+      { label: "Total Crew-Hours", value: Math.round(crewHrs * 10) / 10, unit: "hrs", highlight: true },
+      { label: "Est. Days", value: days, unit: `days (${crew}-person crew)` },
+      { label: "Hang Time", value: Math.round(hangHrs * 10) / 10, unit: "hrs" },
+      { label: "Finish Time", value: Math.round(finishHrs * 10) / 10, unit: "hrs" },
+    ];
+  },
+};
+
+const drywallPatch: Calculator = {
+  id: "drywall-patch",
+  name: "Patch / Repair Area",
+  description: "Material for patching drywall holes or damaged sections",
+  inputs: [
+    { id: "holes", label: "Small Holes (< 6\")", unit: "ea", type: "number", defaultValue: "3", min: 0 },
+    { id: "medPatches", label: "Medium Patches (6\"–24\")", unit: "ea", type: "number", defaultValue: "1", min: 0 },
+    { id: "largePatches", label: "Large Patches (> 24\")", unit: "ft²", type: "number", defaultValue: "0", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const small = parseFloat(inputs.holes) || 0;
+    const med = parseFloat(inputs.medPatches) || 0;
+    const large = parseFloat(inputs.largePatches) || 0;
+    const mudQts = Math.ceil(small * 0.1 + med * 0.5 + large * 0.25);
+    const sandpaperSheets = Math.ceil(small * 1 + med * 2 + large * 1);
+    const primerQts = Math.ceil((small + med + large) / 10);
+    return [
+      { label: "Joint Compound (qt)", value: Math.max(mudQts, 1), unit: "qts", highlight: true },
+      { label: "Sandpaper Sheets", value: sandpaperSheets, unit: "sheets (120g)" },
+      { label: "Primer (qt)", value: Math.max(primerQts, 1), unit: "qts" },
+    ];
+  },
+};
+
+// ─── INSULATION ───────────────────────────────────────────────────────────────
+
+const battInsulation: Calculator = {
+  id: "batt-insulation",
+  name: "Batt / Roll Insulation",
+  description: "Bags or rolls of fiberglass or mineral wool batts",
+  inputs: [
+    { id: "area", label: "Area to Insulate", unit: "ft²", type: "number", defaultValue: "500", min: 0 },
+    {
+      id: "rValue", label: "Target R-Value", unit: "", type: "select",
+      options: [
+        { label: "R-11 (2×4 wall, 3.5\")", value: "R11" },
+        { label: "R-13 (2×4 wall, 3.5\")", value: "R13" },
+        { label: "R-15 (2×4 wall, 3.5\" HD)", value: "R15" },
+        { label: "R-19 (2×6 wall, 5.5\")", value: "R19" },
+        { label: "R-21 (2×6 wall, 5.5\" HD)", value: "R21" },
+        { label: "R-30 (floor/attic, 9.5\")", value: "R30" },
+        { label: "R-38 (attic, 12\")", value: "R38" },
+        { label: "R-49 (attic, 16\")", value: "R49" },
+      ],
+      defaultValue: "R13",
+    },
+    {
+      id: "spacing", label: "Framing Spacing", unit: "", type: "select",
+      options: [
+        { label: "16\" O.C.", value: "16" },
+        { label: "24\" O.C.", value: "24" },
+      ],
+      defaultValue: "16",
+    },
+    { id: "waste", label: "Waste", unit: "%", type: "number", defaultValue: "5", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const spacing = inputs.spacing;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    // Coverage per bag/roll varies by product; typical values
+    const coverageMap: Record<string, [number, string]> = {
+      R11: [40, "40 ft²/roll"],
+      R13: [40, "40 ft²/roll"],
+      R15: [32, "32 ft²/roll"],
+      R19: [48, "48 ft²/roll"],
+      R21: [40, "40 ft²/roll"],
+      R30: [40, "40 ft²/roll"],
+      R38: [32, "32 ft²/bag"],
+      R49: [24, "24 ft²/bag"],
+    };
+    const [covPer] = coverageMap[inputs.rValue] || [40, "40 ft²"];
+    const rolls = Math.ceil((area * waste) / covPer);
+    const vapor = Math.ceil(area * 1.1 / 200); // vapor barrier rolls (200 sqft each)
+    return [
+      { label: "Rolls / Bags", value: rolls, unit: "rolls", highlight: true },
+      { label: "Area (w/ waste)", value: Math.round(area * waste), unit: "ft²" },
+      { label: "Vapor Barrier Rolls", value: vapor, unit: "rolls (200 ft²)" },
+    ];
+  },
+};
+
+const blownInInsulation: Calculator = {
+  id: "blown-in",
+  name: "Blown-In Insulation",
+  description: "Bags of blown cellulose or fiberglass for attics",
+  inputs: [
+    { id: "area", label: "Attic / Floor Area", unit: "ft²", type: "number", defaultValue: "1000", min: 0 },
+    {
+      id: "rValue", label: "Target R-Value", unit: "", type: "select",
+      options: [
+        { label: "R-19 (~5.5\" cellulose)", value: "19" },
+        { label: "R-30 (~8\" cellulose)", value: "30" },
+        { label: "R-38 (~10\" cellulose)", value: "38" },
+        { label: "R-49 (~13\" cellulose)", value: "49" },
+        { label: "R-60 (~16\" cellulose)", value: "60" },
+      ],
+      defaultValue: "38",
+    },
+    {
+      id: "material", label: "Material", unit: "", type: "select",
+      options: [
+        { label: "Cellulose (covers ~40 ft²/bag at R-38)", value: "cellulose" },
+        { label: "Fiberglass (covers ~26 ft²/bag at R-38)", value: "fiberglass" },
+      ],
+      defaultValue: "cellulose",
+    },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const r = parseFloat(inputs.rValue) || 38;
+    const isCellulose = inputs.material === "cellulose";
+    // Bags needed: roughly area / (base_coverage × R38_ratio)
+    // Base: cellulose ~40 ft²/bag at R38, fiberglass ~26 ft²/bag at R38
+    const baseCoverage = isCellulose ? 40 : 26;
+    const rRatio = 38 / r; // more R → fewer sqft per bag
+    const bagCoverage = baseCoverage * rRatio;
+    const bags = Math.ceil(area / bagCoverage);
+    const depth = isCellulose ? (r / 3.7) : (r / 2.5); // inches
+    return [
+      { label: "Bags Needed", value: bags, unit: "bags", highlight: true },
+      { label: "Install Depth", value: Math.round(depth * 10) / 10, unit: "in" },
+      { label: "Area", value: Math.round(area), unit: "ft²" },
+      { label: "Coverage per Bag", value: Math.round(bagCoverage * 10) / 10, unit: "ft²" },
+    ];
+  },
+};
+
+const rigidFoam: Calculator = {
+  id: "rigid-foam",
+  name: "Rigid Foam Board",
+  description: "4×8 sheets of XPS, EPS, or polyiso board",
+  inputs: [
+    { id: "area", label: "Area", unit: "ft²", type: "number", defaultValue: "400", min: 0 },
+    {
+      id: "rPerInch", label: "Foam Type", unit: "", type: "select",
+      options: [
+        { label: "EPS (R-3.8/in, white bead board)", value: "3.8" },
+        { label: "XPS (R-5/in, blue/pink board)", value: "5.0" },
+        { label: "Polyiso (R-6.5/in, foil face)", value: "6.5" },
+      ],
+      defaultValue: "5.0",
+    },
+    { id: "targetR", label: "Target R-Value", unit: "", type: "number", defaultValue: "10", min: 0 },
+    { id: "waste", label: "Waste", unit: "%", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const rPerIn = parseFloat(inputs.rPerInch) || 5;
+    const targetR = parseFloat(inputs.targetR) || 10;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    const thickness = targetR / rPerIn;
+    // Standard thicknesses: 1, 1.5, 2, 3, 4 inches
+    const stdThick = [1, 1.5, 2, 3, 4];
+    let layers = 1;
+    let thickPerLayer = thickness;
+    for (const t of stdThick) {
+      if (t >= thickness) { thickPerLayer = t; break; }
+    }
+    if (thickPerLayer > 4) { layers = Math.ceil(thickness / 4); thickPerLayer = 4; }
+    const sheets = Math.ceil((area * waste * layers) / 32);
+    return [
+      { label: "Sheets (4×8)", value: sheets, unit: "sheets", highlight: true },
+      { label: "Thickness per Layer", value: Math.round(thickPerLayer * 10) / 10, unit: "in" },
+      { label: "Layers", value: layers, unit: "layers" },
+      { label: "Total R-Value", value: Math.round(thickPerLayer * layers * rPerIn * 10) / 10, unit: "" },
+    ];
+  },
+};
+
+const sprayFoam: Calculator = {
+  id: "spray-foam",
+  name: "Spray Foam Coverage",
+  description: "2-part kits or board feet of spray polyurethane foam",
+  inputs: [
+    { id: "area", label: "Area to Spray", unit: "ft²", type: "number", defaultValue: "200", min: 0 },
+    { id: "thickness", label: "Target Thickness", unit: "in", type: "number", defaultValue: "2", min: 0.5, step: 0.5 },
+    {
+      id: "foamType", label: "Foam Type", unit: "", type: "select",
+      options: [
+        { label: "Open-Cell (R-3.7/in) — air seal, interiors", value: "3.7" },
+        { label: "Closed-Cell (R-6.5/in) — vapor barrier, exterior", value: "6.5" },
+      ],
+      defaultValue: "6.5",
+    },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const thick = parseFloat(inputs.thickness) || 2;
+    const rPerIn = parseFloat(inputs.foamType) || 6.5;
+    const boardFt = area * thick; // 1 BF = 1 ft² at 1" thick
+    // Kits: 600 BF kit is common; also 200 BF and 15 BF kits
+    const kit600 = Math.floor(boardFt / 600);
+    const remainder = boardFt % 600;
+    const kit200 = Math.floor(remainder / 200);
+    const rem2 = remainder % 200;
+    const kit15 = Math.ceil(rem2 / 15);
+    const totalR = thick * rPerIn;
+    return [
+      { label: "Board Feet Needed", value: Math.round(boardFt), unit: "BF", highlight: true },
+      { label: "600 BF Kits", value: kit600, unit: "kits" },
+      { label: "200 BF Kits", value: kit200, unit: "kits" },
+      { label: "15 BF Touch-Up Kits", value: kit15, unit: "kits" },
+      { label: "R-Value Achieved", value: Math.round(totalR * 10) / 10, unit: "" },
+    ];
+  },
+};
+
+const rValueCalc: Calculator = {
+  id: "r-value-stack",
+  name: "R-Value Stack-Up",
+  description: "Total wall or roof assembly R-value from multiple layers",
+  inputs: [
+    { id: "sheathing", label: "Sheathing (OSB/ply 1/2\")", unit: "R", type: "number", defaultValue: "0.63", min: 0, step: 0.01 },
+    { id: "cavity", label: "Cavity Insulation", unit: "R", type: "number", defaultValue: "13", min: 0 },
+    { id: "rigidFoamR", label: "Continuous Rigid Foam", unit: "R", type: "number", defaultValue: "5", min: 0 },
+    { id: "drywall", label: "Drywall 1/2\"", unit: "R", type: "number", defaultValue: "0.45", min: 0, step: 0.01 },
+    { id: "siding", label: "Siding / Cladding", unit: "R", type: "number", defaultValue: "0.81", min: 0, step: 0.01 },
+    { id: "airFilms", label: "Air Films (inside + outside)", unit: "R", type: "number", defaultValue: "0.92", min: 0, step: 0.01 },
+  ],
+  calculate: (inputs) => {
+    const layers = [
+      parseFloat(inputs.sheathing) || 0,
+      parseFloat(inputs.cavity) || 0,
+      parseFloat(inputs.rigidFoamR) || 0,
+      parseFloat(inputs.drywall) || 0,
+      parseFloat(inputs.siding) || 0,
+      parseFloat(inputs.airFilms) || 0,
+    ];
+    const totalR = layers.reduce((a, b) => a + b, 0);
+    const uValue = totalR > 0 ? 1 / totalR : 0;
+    return [
+      { label: "Total R-Value", value: Math.round(totalR * 100) / 100, unit: "R", highlight: true },
+      { label: "U-Factor", value: Math.round(uValue * 10000) / 10000, unit: "BTU/hr·ft²·°F" },
+      { label: "Cavity Only", value: parseFloat(inputs.cavity) || 0, unit: "R" },
+      { label: "Continuous Foam", value: parseFloat(inputs.rigidFoamR) || 0, unit: "R" },
+    ];
+  },
+};
+
+// ─── ELECTRICAL (MORE) ────────────────────────────────────────────────────────
+
+const evCharger: Calculator = {
+  id: "ev-charger",
+  name: "EV Charger Circuit (Level 2)",
+  description: "Wire, breaker, and charge time for a home EV charger",
+  inputs: [
+    {
+      id: "amperage", label: "EVSE Amperage", unit: "", type: "select",
+      options: [
+        { label: "16A (3.84 kW) — 240V", value: "16" },
+        { label: "24A (5.76 kW) — 240V", value: "24" },
+        { label: "32A (7.68 kW) — 240V — most common", value: "32" },
+        { label: "40A (9.6 kW) — 240V", value: "40" },
+        { label: "48A (11.52 kW) — 240V — max plug-in", value: "48" },
+        { label: "60A (14.4 kW) — hardwired", value: "60" },
+        { label: "80A (19.2 kW) — hardwired", value: "80" },
+      ],
+      defaultValue: "32",
+    },
+    { id: "runLength", label: "Wire Run Length", unit: "ft", type: "number", defaultValue: "50", min: 0 },
+    { id: "batteryKwh", label: "EV Battery Size", unit: "kWh", type: "number", defaultValue: "82", min: 0 },
+    { id: "percentEmpty", label: "Start Charge Level", unit: "% empty", type: "number", defaultValue: "80", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const amps = parseFloat(inputs.amperage) || 32;
+    const kw = (amps * 240) / 1000;
+    const runFt = parseFloat(inputs.runLength) || 50;
+    const battery = parseFloat(inputs.batteryKwh) || 82;
+    const empty = parseFloat(inputs.percentEmpty) || 80;
+    // NEC 625.17 / 210.19: branch circuit = 125% continuous
+    const breakerAmps = amps * 1.25;
+    // Wire sizing at 125%
+    let wire = "8 AWG";
+    if (breakerAmps <= 20) wire = "12 AWG";
+    else if (breakerAmps <= 30) wire = "10 AWG";
+    else if (breakerAmps <= 40) wire = "8 AWG";
+    else if (breakerAmps <= 55) wire = "6 AWG";
+    else if (breakerAmps <= 70) wire = "4 AWG";
+    else if (breakerAmps <= 95) wire = "3 AWG";
+    else if (breakerAmps <= 110) wire = "2 AWG";
+    // Standard breaker
+    let breaker = 20;
+    for (const b of [20,25,30,40,50,60,70,80,90,100]) { if (b >= breakerAmps) { breaker = b; break; } else { breaker = b; } }
+    const kwhNeeded = battery * (empty / 100);
+    const chargeHrs = kw > 0 ? kwhNeeded / kw : 0;
+    const milesPerHr = kw * 3; // rough: ~3 miles per kWh
+    return [
+      { label: "Breaker Size", value: breaker, unit: "A (2-pole)", highlight: true },
+      { label: "Wire Size (Cu THHN)", value: 0, unit: wire },
+      { label: "Charge Rate", value: Math.round(kw * 10) / 10, unit: "kW" },
+      { label: "Miles Added/Hour", value: Math.round(milesPerHr), unit: "mi/hr" },
+      { label: "Time to Full Charge", value: Math.round(chargeHrs * 10) / 10, unit: "hrs" },
+    ];
+  },
+};
+
+const solarSizing: Calculator = {
+  id: "solar-sizing",
+  name: "Solar System Sizing",
+  description: "Array size and panel count from energy usage",
+  inputs: [
+    { id: "monthlyKwh", label: "Monthly Usage", unit: "kWh/mo", type: "number", defaultValue: "1000", min: 0 },
+    { id: "sunHours", label: "Peak Sun Hours / Day", unit: "hrs", type: "number", defaultValue: "5", min: 0.1, step: 0.5 },
+    {
+      id: "panelWatts", label: "Panel Wattage", unit: "", type: "select",
+      options: [
+        { label: "300W panel", value: "300" },
+        { label: "350W panel", value: "350" },
+        { label: "400W panel", value: "400" },
+        { label: "450W panel", value: "450" },
+        { label: "500W panel", value: "500" },
+      ],
+      defaultValue: "400",
+    },
+    { id: "systemLoss", label: "System Loss / Derating", unit: "%", type: "number", defaultValue: "20", min: 0 },
+    { id: "offset", label: "Offset Goal", unit: "%", type: "number", defaultValue: "100", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const monthly = parseFloat(inputs.monthlyKwh) || 0;
+    const sunHrs = parseFloat(inputs.sunHours) || 5;
+    const panelW = parseFloat(inputs.panelWatts) || 400;
+    const loss = 1 - (parseFloat(inputs.systemLoss) || 20) / 100;
+    const offset = (parseFloat(inputs.offset) || 100) / 100;
+    const dailyKwh = (monthly * offset) / 30.4;
+    const systemKw = dailyKwh / (sunHrs * loss);
+    const panels = Math.ceil((systemKw * 1000) / panelW);
+    const annualProduction = systemKw * sunHrs * 365 * loss;
+    return [
+      { label: "System Size", value: Math.round(systemKw * 100) / 100, unit: "kW DC", highlight: true },
+      { label: "Panels Needed", value: panels, unit: `× ${panelW}W panels` },
+      { label: "Est. Annual Production", value: Math.round(annualProduction), unit: "kWh/yr" },
+      { label: "Daily Target", value: Math.round(dailyKwh * 10) / 10, unit: "kWh/day" },
+    ];
+  },
+};
+
+const recessedLightSpacing: Calculator = {
+  id: "recessed-light-spacing",
+  name: "Recessed Light Spacing",
+  description: "How many cans and where to place them for even lighting",
+  inputs: [
+    { id: "length", label: "Room Length", unit: "ft", type: "number", defaultValue: "16", min: 0 },
+    { id: "width", label: "Room Width", unit: "ft", type: "number", defaultValue: "12", min: 0 },
+    { id: "ceilingHt", label: "Ceiling Height", unit: "ft", type: "number", defaultValue: "9", min: 0 },
+    {
+      id: "canSize", label: "Can / Trim Size", unit: "", type: "select",
+      options: [
+        { label: "4\" (spread ~4–5 ft)", value: "4.5" },
+        { label: "5\" (spread ~5–6 ft)", value: "5.5" },
+        { label: "6\" (spread ~6–7 ft)", value: "6.5" },
+      ],
+      defaultValue: "6.5",
+    },
+    { id: "targetFc", label: "Target Foot-Candles", unit: "fc", type: "number", defaultValue: "30", min: 5 },
+  ],
+  calculate: (inputs) => {
+    const l = parseFloat(inputs.length) || 0;
+    const w = parseFloat(inputs.width) || 0;
+    const h = parseFloat(inputs.ceilingHt) || 9;
+    const spread = parseFloat(inputs.canSize) || 6.5;
+    const fc = parseFloat(inputs.targetFc) || 30;
+    // Spacing rule: can diameter × ceiling height / 2 for perimeter placement
+    const wallOffset = h / 2;
+    const spacing = spread;
+    const cols = Math.ceil(l / spacing);
+    const rows = Math.ceil(w / spacing);
+    const count = cols * rows;
+    // Lumens needed: area × fc / CU (assume 0.7 CU for recessed)
+    const lumensNeeded = l * w * fc / 0.7;
+    const lumensPerCan = Math.round(lumensNeeded / Math.max(count, 1));
+    return [
+      { label: "Recessed Cans", value: count, unit: "cans", highlight: true },
+      { label: "Grid Spacing", value: Math.round(spacing * 10) / 10, unit: "ft" },
+      { label: "Wall Offset", value: Math.round(wallOffset * 10) / 10, unit: "ft from wall" },
+      { label: "Lumens per Can", value: lumensPerCan, unit: "lumens" },
+      { label: "Total Lumens Needed", value: Math.round(lumensNeeded), unit: "lm" },
+    ];
+  },
+};
+
+// ─── FRAMING (MORE) ───────────────────────────────────────────────────────────
+
+const stairCalculator: Calculator = {
+  id: "stair-calculator",
+  name: "Stair Calculator",
+  description: "Risers, treads, stringer length, and material for a staircase",
+  inputs: [
+    { id: "totalRise", label: "Total Rise (floor to floor)", unit: "in", type: "number", defaultValue: "109", min: 0 },
+    { id: "treadDepth", label: "Tread Depth", unit: "in", type: "number", defaultValue: "10", min: 0 },
+    { id: "width", label: "Stair Width", unit: "in", type: "number", defaultValue: "36", min: 0 },
+    { id: "treadsPerStringer", label: "Stringers", unit: "ea", type: "number", defaultValue: "3", min: 2 },
+  ],
+  calculate: (inputs) => {
+    const totalRise = parseFloat(inputs.totalRise) || 0;
+    const treadDepth = parseFloat(inputs.treadDepth) || 10;
+    const width = parseFloat(inputs.width) || 36;
+    const stringers = parseFloat(inputs.treadsPerStringer) || 3;
+    const risers = Math.ceil(totalRise / 7.75); // max 7-3/4" riser per IBC
+    const riserHeight = totalRise / risers;
+    const totalRun = (risers - 1) * treadDepth;
+    // Stringer length via Pythagorean theorem
+    const stringerLen = Math.sqrt(totalRise * totalRise + totalRun * totalRun) / 12;
+    // Treads needed (risers - 1 for attached landings)
+    const treadCount = risers - 1;
+    const treadBoardFt = (treadCount * (width / 12) * (treadDepth / 12)) * 1.1;
+    return [
+      { label: "Number of Risers", value: risers, unit: "risers", highlight: true },
+      { label: "Riser Height", value: Math.round(riserHeight * 100) / 100, unit: "in" },
+      { label: "Treads", value: treadCount, unit: "treads" },
+      { label: "Total Run", value: Math.round(totalRun * 10) / 10, unit: "in" },
+      { label: "Stringer Length", value: Math.round(stringerLen * 100) / 100, unit: "ft each" },
+      { label: "Tread Board-Feet", value: Math.round(treadBoardFt * 10) / 10, unit: "BF" },
+    ];
+  },
+};
+
+const deckBoards: Calculator = {
+  id: "deck-boards",
+  name: "Deck Boards",
+  description: "Linear feet and pieces of decking boards",
+  inputs: [
+    { id: "length", label: "Deck Length", unit: "ft", type: "number", defaultValue: "20", min: 0 },
+    { id: "width", label: "Deck Width", unit: "ft", type: "number", defaultValue: "16", min: 0 },
+    {
+      id: "boardWidth", label: "Board Width", unit: "", type: "select",
+      options: [
+        { label: "5/4×6 (5.5\" face)", value: "5.5" },
+        { label: "2×6 (5.5\" face)", value: "5.5" },
+        { label: "2×4 (3.5\" face)", value: "3.5" },
+        { label: "1×6 Composite (5.5\")", value: "5.5" },
+        { label: "1×4 Composite (3.5\")", value: "3.5" },
+      ],
+      defaultValue: "5.5",
+    },
+    { id: "gap", label: "Board Gap", unit: "in", type: "number", defaultValue: "0.25", min: 0, step: 0.0625 },
+    {
+      id: "boardLength", label: "Board Length", unit: "", type: "select",
+      options: [
+        { label: "8 ft", value: "8" },
+        { label: "10 ft", value: "10" },
+        { label: "12 ft", value: "12" },
+        { label: "16 ft", value: "16" },
+        { label: "20 ft", value: "20" },
+      ],
+      defaultValue: "16",
+    },
+    { id: "waste", label: "Waste", unit: "%", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const l = parseFloat(inputs.length) || 0;
+    const w = parseFloat(inputs.width) || 0;
+    const boardFace = parseFloat(inputs.boardWidth) || 5.5;
+    const gap = parseFloat(inputs.gap) || 0.25;
+    const boardLen = parseFloat(inputs.boardLength) || 16;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    const effectiveWidth = (boardFace + gap) / 12;
+    const rowCount = Math.ceil(w / effectiveWidth);
+    const lfNeeded = rowCount * l * waste;
+    const pieces = Math.ceil(lfNeeded / boardLen);
+    const screwsPerBoard = Math.ceil((l / 1.33) * 2); // every joist ~16" OC, 2 screws
+    return [
+      { label: "Pieces", value: pieces, unit: `${boardLen}-ft boards`, highlight: true },
+      { label: "Linear Feet", value: Math.round(lfNeeded), unit: "LF" },
+      { label: "Rows", value: rowCount, unit: "rows" },
+      { label: "Screws / Clips (est.)", value: pieces * screwsPerBoard, unit: "ea" },
+    ];
+  },
+};
+
+// ─── PLUMBING (MORE) ─────────────────────────────────────────────────────────
+
+const septicSizing: Calculator = {
+  id: "septic-sizing",
+  name: "Septic Tank Sizing",
+  description: "Minimum tank gallons and leach field for a home",
+  inputs: [
+    { id: "bedrooms", label: "Bedrooms", unit: "ea", type: "number", defaultValue: "3", min: 1 },
+    {
+      id: "soilPerc", label: "Soil Percolation Rate", unit: "", type: "select",
+      options: [
+        { label: "Fast (< 3 min/in) — sandy", value: "fast" },
+        { label: "Moderate (3–30 min/in) — loam", value: "mod" },
+        { label: "Slow (30–60 min/in) — clay", value: "slow" },
+      ],
+      defaultValue: "mod",
+    },
+  ],
+  calculate: (inputs) => {
+    const br = parseFloat(inputs.bedrooms) || 3;
+    const perc = inputs.soilPerc;
+    // EPA / typical sizing: 1000 gal for ≤2 br, +250 each additional
+    const tankGal = br <= 2 ? 1000 : 1000 + (br - 2) * 250;
+    // Daily flow: 75 GPD per bedroom (conservative)
+    const dailyFlow = br * 75;
+    // Leach field: sq ft per GPD based on perc rate
+    const sqftPerGpd = perc === "fast" ? 0.8 : perc === "mod" ? 1.2 : 2.0;
+    const leachSqFt = Math.ceil(dailyFlow * sqftPerGpd);
+    // 100% reserve required by most codes
+    const totalSqFt = leachSqFt * 2;
+    return [
+      { label: "Minimum Tank Size", value: tankGal, unit: "gal", highlight: true },
+      { label: "Daily Flow", value: dailyFlow, unit: "GPD" },
+      { label: "Primary Field", value: leachSqFt, unit: "ft²" },
+      { label: "Total (w/ 100% reserve)", value: totalSqFt, unit: "ft²" },
+    ];
+  },
+};
+
+const pipeInsulationCalc: Calculator = {
+  id: "pipe-insulation",
+  name: "Pipe Insulation",
+  description: "Linear feet of foam pipe insulation sleeves",
+  inputs: [
+    { id: "hotLF", label: "Hot Water Pipe Run", unit: "LF", type: "number", defaultValue: "60", min: 0 },
+    { id: "coldLF", label: "Cold / Supply Pipe Run", unit: "LF", type: "number", defaultValue: "40", min: 0 },
+    {
+      id: "pipeDia", label: "Pipe Diameter", unit: "", type: "select",
+      options: [
+        { label: "1/2\"", value: "0.5" },
+        { label: "3/4\"", value: "0.75" },
+        { label: "1\"", value: "1.0" },
+        { label: "1-1/4\"", value: "1.25" },
+        { label: "1-1/2\"", value: "1.5" },
+        { label: "2\"", value: "2.0" },
+      ],
+      defaultValue: "0.75",
+    },
+    { id: "sleeveLen", label: "Sleeve Length", unit: "ft", type: "number", defaultValue: "6", min: 1 },
+  ],
+  calculate: (inputs) => {
+    const hot = parseFloat(inputs.hotLF) || 0;
+    const cold = parseFloat(inputs.coldLF) || 0;
+    const sleeveLen = parseFloat(inputs.sleeveLen) || 6;
+    const total = hot + cold;
+    const pieces = Math.ceil(total / sleeveLen);
+    const waste = Math.ceil(pieces * 0.1);
+    return [
+      { label: "Pieces Needed", value: pieces + waste, unit: `${sleeveLen}-ft sleeves`, highlight: true },
+      { label: "Total Linear Feet", value: Math.round(total), unit: "LF" },
+      { label: "Hot Water Pipes", value: hot, unit: "LF" },
+      { label: "Cold / Supply Pipes", value: cold, unit: "LF" },
+    ];
+  },
+};
+
+// ─── HVAC (MORE) ─────────────────────────────────────────────────────────────
+
+const heatLossGain: Calculator = {
+  id: "heat-loss-gain",
+  name: "Simplified Heat Load (Manual J)",
+  description: "Estimated heating and cooling load for a room or zone",
+  inputs: [
+    { id: "area", label: "Room / Zone Area", unit: "ft²", type: "number", defaultValue: "300", min: 0 },
+    { id: "ceilingHt", label: "Ceiling Height", unit: "ft", type: "number", defaultValue: "9", min: 0 },
+    { id: "windows", label: "Window Area", unit: "ft²", type: "number", defaultValue: "40", min: 0 },
+    { id: "wallR", label: "Wall R-Value", unit: "R", type: "number", defaultValue: "13", min: 1 },
+    { id: "designDelta", label: "Design Temp Difference (ΔT)", unit: "°F", type: "number", defaultValue: "55", min: 0 },
+    {
+      id: "climate", label: "Climate / Occupancy", unit: "", type: "select",
+      options: [
+        { label: "Cold Climate (heating dominant)", value: "heat" },
+        { label: "Hot Climate (cooling dominant)", value: "cool" },
+        { label: "Mixed Climate", value: "mixed" },
+      ],
+      defaultValue: "heat",
+    },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const ht = parseFloat(inputs.ceilingHt) || 9;
+    const winArea = parseFloat(inputs.windows) || 0;
+    const wallR = parseFloat(inputs.wallR) || 13;
+    const delta = parseFloat(inputs.designDelta) || 55;
+    const wallArea = (area * 4 / Math.sqrt(area)) * ht - winArea; // rough perimeter × height
+    // U-values
+    const uWall = 1 / wallR;
+    const uCeiling = 1 / 30; // R-30 assumed
+    const uWindow = 0.35; // double-pane
+    const wallLoss = uWall * wallArea * delta;
+    const ceilLoss = uCeiling * area * delta;
+    const winLoss = uWindow * winArea * delta;
+    const infiltration = (area * ht * 0.5 * 0.018 * delta); // 0.5 ACH × 0.018 BTU/ft³·°F
+    const totalBtu = wallLoss + ceilLoss + winLoss + infiltration;
+    const tons = totalBtu / 12000;
+    return [
+      { label: "Total Load", value: Math.round(totalBtu), unit: "BTU/hr", highlight: true },
+      { label: "Tonnage", value: Math.round(tons * 10) / 10, unit: "tons" },
+      { label: "Wall Loss", value: Math.round(wallLoss), unit: "BTU/hr" },
+      { label: "Window Loss", value: Math.round(winLoss), unit: "BTU/hr" },
+      { label: "Infiltration", value: Math.round(infiltration), unit: "BTU/hr" },
+    ];
+  },
+};
+
+const exhaustFan: Calculator = {
+  id: "exhaust-fan",
+  name: "Exhaust Fan Sizing",
+  description: "CFM rating for bathroom, kitchen, or utility exhaust fans",
+  inputs: [
+    {
+      id: "room", label: "Room Type", unit: "", type: "select",
+      options: [
+        { label: "Bathroom (< 100 ft²)", value: "bath_small" },
+        { label: "Bathroom (> 100 ft²)", value: "bath_large" },
+        { label: "Kitchen Range Hood", value: "kitchen" },
+        { label: "Utility / Laundry Room", value: "utility" },
+      ],
+      defaultValue: "bath_small",
+    },
+    { id: "area", label: "Room Area", unit: "ft²", type: "number", defaultValue: "50", min: 0 },
+    { id: "ceilingHt", label: "Ceiling Height", unit: "ft", type: "number", defaultValue: "8", min: 0 },
+    { id: "btu", label: "Range BTU (kitchen only)", unit: "BTU/hr", type: "number", defaultValue: "60000", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const ht = parseFloat(inputs.ceilingHt) || 8;
+    const btu = parseFloat(inputs.btu) || 0;
+    const roomType = inputs.room;
+    let cfm = 0;
+    let rule = "";
+    if (roomType === "bath_small") {
+      cfm = Math.max(50, area); // HVI: 1 CFM per sqft, min 50
+      rule = "HVI: 1 CFM/ft², min 50 CFM";
+    } else if (roomType === "bath_large") {
+      // Per fixture: toilet 50, shower 50, tub 50, separate WC 50
+      cfm = Math.max(Math.ceil(area * 1.07), 100);
+      rule = "ASHRAE 62.2: per fixture method";
+    } else if (roomType === "kitchen") {
+      cfm = Math.max(btu / 100, 400); // 1 CFM per 100 BTU, min 400
+      rule = "HVI: 1 CFM per 100 BTU, min 400";
+    } else {
+      // Utility: 0.5 ACH minimum
+      cfm = Math.ceil((area * ht * 0.5) / 60);
+      rule = "0.5 ACH minimum";
+    }
+    return [
+      { label: "Required CFM", value: Math.ceil(cfm), unit: "CFM", highlight: true },
+      { label: "Sone Rating (max)", value: roomType === "bath_small" ? 1 : 2, unit: "sones" },
+      { label: "Sizing Method", value: 0, unit: rule },
+    ];
+  },
+};
+
+// ─── ROOFING (MORE) ──────────────────────────────────────────────────────────
+
+const snowLoad: Calculator = {
+  id: "snow-load",
+  name: "Roof Snow Load",
+  description: "Balanced and unbalanced snow load on a sloped roof",
+  inputs: [
+    { id: "pg", label: "Ground Snow Load (Pg)", unit: "psf", type: "number", defaultValue: "30", min: 0 },
+    { id: "rise", label: "Roof Slope (rise per 12\")", unit: "in", type: "number", defaultValue: "6", min: 0 },
+    {
+      id: "exposure", label: "Exposure Category", unit: "", type: "select",
+      options: [
+        { label: "Sheltered (Ce = 1.2)", value: "1.2" },
+        { label: "Partially Exposed (Ce = 1.0)", value: "1.0" },
+        { label: "Fully Exposed (Ce = 0.9)", value: "0.9" },
+      ],
+      defaultValue: "1.0",
+    },
+    {
+      id: "thermal", label: "Thermal Factor", unit: "", type: "select",
+      options: [
+        { label: "Heated Building (Ct = 1.0)", value: "1.0" },
+        { label: "Poorly Insulated (Ct = 1.1)", value: "1.1" },
+        { label: "Unheated (Ct = 1.2)", value: "1.2" },
+        { label: "Freezer / Cold Storage (Ct = 1.3)", value: "1.3" },
+      ],
+      defaultValue: "1.0",
+    },
+    { id: "is", label: "Importance Factor (Is)", unit: "", type: "number", defaultValue: "1.0", min: 0.8, step: 0.05 },
+  ],
+  calculate: (inputs) => {
+    const pg = parseFloat(inputs.pg) || 0;
+    const slope = parseFloat(inputs.rise) || 6;
+    const Ce = parseFloat(inputs.exposure) || 1.0;
+    const Ct = parseFloat(inputs.thermal) || 1.0;
+    const Is = parseFloat(inputs.is) || 1.0;
+    // ASCE 7: pf = 0.7 × Ce × Ct × Is × pg
+    const pf = 0.7 * Ce * Ct * Is * pg;
+    // Slope factor Cs (roof pitch in degrees)
+    const deg = Math.atan(slope / 12) * (180 / Math.PI);
+    const Cs = deg <= 30 ? 1.0 : deg <= 70 ? 1.0 - (deg - 30) / 40 : 0;
+    const ps = Cs * pf;
+    return [
+      { label: "Flat Roof Snow Load (pf)", value: Math.round(pf * 10) / 10, unit: "psf", highlight: true },
+      { label: "Sloped Roof Load (ps)", value: Math.round(ps * 10) / 10, unit: "psf" },
+      { label: "Slope Factor (Cs)", value: Math.round(Cs * 100) / 100, unit: "" },
+      { label: "Roof Pitch", value: slope, unit: "in / 12" },
+    ];
+  },
+};
+
+const dripEdge: Calculator = {
+  id: "drip-edge",
+  name: "Drip Edge & Fascia",
+  description: "Linear feet of drip edge and fascia board",
+  inputs: [
+    { id: "length", label: "Building Length", unit: "ft", type: "number", defaultValue: "40", min: 0 },
+    { id: "width", label: "Building Width", unit: "ft", type: "number", defaultValue: "30", min: 0 },
+    { id: "overhang", label: "Eave Overhang", unit: "in", type: "number", defaultValue: "12", min: 0 },
+    { id: "rise", label: "Roof Pitch (rise per 12\")", unit: "in", type: "number", defaultValue: "6", min: 0 },
+    {
+      id: "pieceLen", label: "Stock Length", unit: "", type: "select",
+      options: [
+        { label: "10 ft pieces", value: "10" },
+        { label: "12 ft pieces", value: "12" },
+      ],
+      defaultValue: "10",
+    },
+  ],
+  calculate: (inputs) => {
+    const l = parseFloat(inputs.length) || 0;
+    const w = parseFloat(inputs.width) || 0;
+    const overhang = (parseFloat(inputs.overhang) || 0) / 12;
+    const stockLen = parseFloat(inputs.pieceLen) || 10;
+    // Rake sides use slope-adjusted length
+    const pitch = parseFloat(inputs.rise) || 6;
+    const slopeMult = Math.sqrt(pitch * pitch + 144) / 12;
+    const rakeLF = (w / 2) * slopeMult * 2 * 2; // 2 gable ends, 2 rake edges each
+    const eaveLF = (l + overhang * 2) * 2; // two eaves
+    const totalDripEdge = rakeLF + eaveLF;
+    const pieces = Math.ceil(totalDripEdge / stockLen * 1.05);
+    return [
+      { label: "Drip Edge Pieces", value: pieces, unit: `${stockLen}-ft pieces`, highlight: true },
+      { label: "Total LF", value: Math.round(totalDripEdge), unit: "LF" },
+      { label: "Eave LF", value: Math.round(eaveLF), unit: "LF" },
+      { label: "Rake LF", value: Math.round(rakeLF), unit: "LF" },
+    ];
+  },
+};
+
+// ─── LANDSCAPING ─────────────────────────────────────────────────────────────
+
+const mulchCalc: Calculator = {
+  id: "mulch",
+  name: "Mulch / Topsoil / Gravel",
+  description: "Cubic yards or bags of bulk material",
+  inputs: [
+    { id: "area", label: "Coverage Area", unit: "ft²", type: "number", defaultValue: "500", min: 0 },
+    { id: "depth", label: "Depth", unit: "in", type: "number", defaultValue: "3", min: 0, step: 0.5 },
+    {
+      id: "material", label: "Material", unit: "", type: "select",
+      options: [
+        { label: "Mulch (wood, shredded)", value: "mulch" },
+        { label: "Topsoil", value: "topsoil" },
+        { label: "Gravel / Stone", value: "gravel" },
+        { label: "Sand", value: "sand" },
+        { label: "Compost", value: "compost" },
+      ],
+      defaultValue: "mulch",
+    },
+    { id: "waste", label: "Extra / Waste", unit: "%", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const depth = (parseFloat(inputs.depth) || 0) / 12;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    const cubicFt = area * depth * waste;
+    const cy = cubicFt / 27;
+    // Bags: 2 cu ft bags
+    const bags2cuFt = Math.ceil(cubicFt / 2);
+    // Weight per CY for delivery reference
+    const weightMap: Record<string, number> = { mulch: 800, topsoil: 2000, gravel: 2800, sand: 2700, compost: 1000 };
+    const lbsPerCy = weightMap[inputs.material] || 1500;
+    const tons = (cy * lbsPerCy) / 2000;
+    return [
+      { label: "Cubic Yards", value: Math.round(cy * 100) / 100, unit: "yd³", highlight: true },
+      { label: "2 cu ft Bags", value: bags2cuFt, unit: "bags" },
+      { label: "Approx Weight", value: Math.round(tons * 100) / 100, unit: "tons" },
+    ];
+  },
+};
+
+const sodCalc: Calculator = {
+  id: "sod",
+  name: "Sod & Seed",
+  description: "Pallets of sod or lbs of seed for a lawn area",
+  inputs: [
+    { id: "area", label: "Lawn Area", unit: "ft²", type: "number", defaultValue: "2000", min: 0 },
+    {
+      id: "type", label: "Installation Method", unit: "", type: "select",
+      options: [
+        { label: "Sod (pallets — 450 ft²/pallet)", value: "sod" },
+        { label: "Seed — new lawn (4–6 lbs/1000 ft²)", value: "seed_new" },
+        { label: "Seed — overseeding (2–3 lbs/1000 ft²)", value: "seed_over" },
+      ],
+      defaultValue: "sod",
+    },
+    { id: "waste", label: "Waste / Cuts", unit: "%", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const area = parseFloat(inputs.area) || 0;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    const total = area * waste;
+    if (inputs.type === "sod") {
+      const pallets = Math.ceil(total / 450);
+      const pieces = Math.ceil(total / 1.5); // typical 18"×24" piece = 3 sf
+      return [
+        { label: "Pallets of Sod", value: pallets, unit: "pallets (450 ft²)", highlight: true },
+        { label: "Individual Pieces", value: pieces, unit: "pieces" },
+        { label: "Area (w/ waste)", value: Math.round(total), unit: "ft²" },
+      ];
+    } else {
+      const lbsPer = inputs.type === "seed_new" ? 5 : 2.5;
+      const lbs = Math.ceil((total / 1000) * lbsPer);
+      return [
+        { label: "Seed Needed", value: lbs, unit: "lbs", highlight: true },
+        { label: "Area", value: Math.round(area), unit: "ft²" },
+        { label: "Rate", value: lbsPer, unit: "lbs/1000 ft²" },
+      ];
+    }
+  },
+};
+
+const retainingWall: Calculator = {
+  id: "retaining-wall",
+  name: "Retaining Wall Block",
+  description: "Block count and drainage stone for a retaining wall",
+  inputs: [
+    { id: "length", label: "Wall Length", unit: "ft", type: "number", defaultValue: "30", min: 0 },
+    { id: "height", label: "Wall Height", unit: "ft", type: "number", defaultValue: "3", min: 0, step: 0.5 },
+    {
+      id: "blockType", label: "Block Type", unit: "", type: "select",
+      options: [
+        { label: "Allan Block / 6\"×18\" (0.75 ft² face)", value: "0.75" },
+        { label: "Versa-Lok / 6\"×16\" (0.67 ft² face)", value: "0.67" },
+        { label: "Keystone 6\"×16\" (0.67 ft² face)", value: "0.67" },
+        { label: "Natural Stone ~12\"×18\" (1.5 ft²)", value: "1.5" },
+      ],
+      defaultValue: "0.75",
+    },
+    { id: "waste", label: "Waste / Cuts", unit: "%", type: "number", defaultValue: "10", min: 0 },
+  ],
+  calculate: (inputs) => {
+    const l = parseFloat(inputs.length) || 0;
+    const h = parseFloat(inputs.height) || 0;
+    const blockFace = parseFloat(inputs.blockType) || 0.75;
+    const waste = 1 + (parseFloat(inputs.waste) || 0) / 100;
+    const faceArea = l * h;
+    const blocks = Math.ceil((faceArea * waste) / blockFace);
+    // Base course 6" below grade, batter set-back ~1"/ft height
+    // Drainage stone: 12" wide × wall height + 6" base per LF of wall
+    const drainageCY = Math.ceil((l * (h + 0.5) * 1) / 27);
+    const capBlocks = Math.ceil(l * 1.05 / 1.5); // cap block ~18" each
+    return [
+      { label: "Wall Block Count", value: blocks, unit: "blocks", highlight: true },
+      { label: "Cap Blocks", value: capBlocks, unit: "blocks" },
+      { label: "Drainage Stone", value: drainageCY, unit: "yd³" },
+      { label: "Face Area", value: Math.round(faceArea), unit: "ft²" },
+    ];
+  },
+};
+
 // ─── TRADES ───────────────────────────────────────────────────────────────────
 
 export const trades: Trade[] = [
@@ -2271,7 +3277,7 @@ export const trades: Trade[] = [
     name: "Framing",
     color: "#92400E",
     icon: "box",
-    calculators: [studCount, boardFeet, sheathingSheets, joistCount, rafterLength, wallFramingList],
+    calculators: [studCount, boardFeet, sheathingSheets, joistCount, rafterLength, wallFramingList, stairCalculator, deckBoards],
   },
   {
     id: "electrical",
@@ -2292,6 +3298,9 @@ export const trades: Trade[] = [
       groundingConductor,
       demandFactor,
       shortCircuitCurrent,
+      evCharger,
+      solarSizing,
+      recessedLightSpacing,
     ],
   },
   {
@@ -2299,21 +3308,21 @@ export const trades: Trade[] = [
     name: "Plumbing",
     color: "#1D4ED8",
     icon: "droplet",
-    calculators: [drainSlope, pipeSizing, fixtureUnits, pressureLoss, gasPipeSizing, waterHeaterSizing],
+    calculators: [drainSlope, pipeSizing, fixtureUnits, pressureLoss, gasPipeSizing, waterHeaterSizing, septicSizing, pipeInsulationCalc],
   },
   {
     id: "hvac",
     name: "HVAC",
     color: "#065F46",
     icon: "wind",
-    calculators: [btuLoad, ductSizing, cfmPerRoom, refrigerantLineSizing, ventilationRate],
+    calculators: [btuLoad, ductSizing, cfmPerRoom, refrigerantLineSizing, ventilationRate, heatLossGain, exhaustFan],
   },
   {
     id: "roofing",
     name: "Roofing",
     color: "#991B1B",
     icon: "home",
-    calculators: [roofPitch, roofingArea, shingleCount, underlaymentRolls, valleyLength],
+    calculators: [roofPitch, roofingArea, shingleCount, underlaymentRolls, valleyLength, snowLoad, dripEdge],
   },
   {
     id: "masonry",
@@ -2342,6 +3351,27 @@ export const trades: Trade[] = [
     color: "#713F12",
     icon: "truck",
     calculators: [cutFill, swellFactor, haulLoads, trenchVolume, gradeSlope, compactionPasses],
+  },
+  {
+    id: "drywall",
+    name: "Drywall",
+    color: "#4B5563",
+    icon: "align-justify",
+    calculators: [drywallSheets, jointCompound, cornerBead, drywallLiftRental, drywallPatch],
+  },
+  {
+    id: "insulation",
+    name: "Insulation",
+    color: "#0F766E",
+    icon: "thermometer",
+    calculators: [battInsulation, blownInInsulation, rigidFoam, sprayFoam, rValueCalc],
+  },
+  {
+    id: "landscaping",
+    name: "Landscaping",
+    color: "#15803D",
+    icon: "sun",
+    calculators: [mulchCalc, sodCalc, retainingWall],
   },
 ];
 
