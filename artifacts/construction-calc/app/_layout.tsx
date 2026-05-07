@@ -14,6 +14,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { getTradeById } from "@/data/calculators";
 import { useColors } from "@/hooks/useColors";
 
 SplashScreen.preventAutoHideAsync();
@@ -38,13 +39,25 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="trade/[id]"
-        options={({ route }) => ({
-          title: (route.params as { id?: string })?.id
-            ? (route.params as { id: string }).id.charAt(0).toUpperCase() +
-              (route.params as { id: string }).id.slice(1)
-            : "Trade",
-          headerBackTitle: "Home",
-        })}
+        options={({ route }) => {
+          const id = (route.params as { id?: string })?.id ?? "";
+          const trade = getTradeById(id);
+          return {
+            title: trade?.name ?? "Trade",
+            headerBackTitle: "Home",
+          };
+        }}
+      />
+      <Stack.Screen
+        name="refs/[id]"
+        options={({ route }) => {
+          const id = (route.params as { id?: string })?.id ?? "";
+          const trade = getTradeById(id);
+          return {
+            title: trade ? `${trade.name} References` : "References",
+            headerBackTitle: "Home",
+          };
+        }}
       />
       <Stack.Screen
         name="calc/[id]"
@@ -61,6 +74,10 @@ function RootLayoutNav() {
             headerBackTitle: "Back",
           };
         }}
+      />
+      <Stack.Screen
+        name="settings"
+        options={{ title: "Settings", headerBackTitle: "Home" }}
       />
     </Stack>
   );
