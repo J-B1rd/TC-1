@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -9,22 +9,186 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { trades } from "@/data/calculators";
+import type { Trade } from "@/data/calculators";
 import { tradeReferences } from "@/data/references";
 import { useColors } from "@/hooks/useColors";
+import { useTradeOrder } from "@/hooks/useTradeOrder";
 
-export default function HomeScreen() {
+// ─── Animated Trade Card ──────────────────────────────────────────────────────
+
+function TradeCard({
+  trade,
+  drag,
+  isActive,
+  editMode,
+}: {
+  trade: Trade;
+  drag?: () => void;
+  isActive?: boolean;
+  editMode: boolean;
+}) {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
+  const refCount = tradeReferences[trade.id]?.length ?? 0;
+  const rot = useSharedValue(0);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
+  useEffect(() => {
+    if (editMode && !isActive) {
+      const delay = Math.random() * 80;
+      const timer = setTimeout(() => {
+        rot.value = withRepeat(
+          withSequence(
+            withTiming(-1.5, { duration: 80 }),
+            withTiming(1.5, { duration: 80 })
+          ),
+          -1,
+          false
+        );
+      }, delay);
+      return () => clearTimeout(timer);
+    } else {
+      cancelAnimation(rot);
+      rot.value = withTiming(0, { duration: 120 });
+    }
+  }, [editMode, isActive]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rot.value}deg` }],
+  }));
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+    <Animated.View style={[styles.cardWrap, animStyle]}>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: isActive ? trade.color : colors.border,
+            shadowColor: isActive ? trade.color : "#000",
+            shadowOpacity: isActive ? 0.22 : 0.05,
+            shadowRadius: isActive ? 14 : 3,
+            shadowOffset: { width: 0, height: isActive ? 6 : 1 },
+            elevation: isActive ? 10 : 1,
+          },
+        ]}
+      >
+        {/* Top row */}
+        <View style={styles.cardTop}>
+          <View style={[styles.tradeIcon, { backgroundColor: trade.color + "1A" }]}>
+            <Feather
+              name={trade.icon as keyof typeof Feather.glyphMap}
+              size={22}
+              color={trade.color}
+            />
+          </View>
+          <View style={styles.tradeInfo}>
+            <Text style={[styles.tradeName, { color: colors.foreground }]}>
+              {trade.name}
+            </Text>
+            <Text style={[styles.tradeMeta, { color: colors.mutedForeground }]}>
+              {trade.calculators.length} calcs
+              {refCount > 0 ? `  ·  ${refCount} refs` : ""}
+            </Text>
+          </View>
+          {editMode && drag ? (
+            <Pressable
+              onPressIn={drag}
+              hitSlop={12}
+              style={styles.dragHandle}
+            >
+              <Feather name="menu" size={20} color={colors.mutedForeground} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Action buttons — hidden in edit mode */}
+        {!editMode && (
+          <>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <View style={styles.cardActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  {
+                    backgroundColor: trade.color + "15",
+                    borderColor: trade.color + "35",
+                    opacity: pressed ? 0.65 : 1,
+                  },
+                ]}
+                onPress={() => router.push(`/trade/${trade.id}`)}
+              >
+                <Feather name="cpu" size={13} color={trade.color} />
+                <Text style={[styles.actionLabel, { color: trade.color }]}>
+                  Calculators
+                </Text>
+                <View style={[styles.badge, { backgroundColor: trade.color + "25" }]}>
+                  <Text style={[styles.badgeText, { color: trade.color }]}>
+                    {trade.calculators.length}
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.65 : 1,
+                  },
+                ]}
+                onPress={() => router.push(`/refs/${trade.id}`)}
+              >
+                <Feather name="book-open" size={13} color={colors.mutedForeground} />
+                <Text style={[styles.actionLabel, { color: colors.mutedForeground }]}>
+                  References
+                </Text>
+                {refCount > 0 && (
+                  <View style={[styles.badge, { backgroundColor: colors.muted }]}>
+                    <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>
+                      {refCount}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          </>
+        )}
+
+        <View style={[styles.accentBar, { backgroundColor: trade.color }]} />
+      </View>
+    </Animated.View>
+  );
+}
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+
+function Header({
+  editMode,
+  onEdit,
+  onDone,
+  onReset,
+}: {
+  editMode: boolean;
+  onEdit: () => void;
+  onDone: () => void;
+  onReset: () => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  return (
+    <>
       <View
         style={[
           styles.header,
@@ -40,195 +204,291 @@ export default function HomeScreen() {
             Tradesman Toolkit
           </Text>
           <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            Field Calculators
+            {editMode ? "Hold handle & drag to reorder" : "Field Calculators"}
           </Text>
         </View>
-        <Pressable
-          style={({ pressed }) => [
-            styles.settingsBtn,
-            { backgroundColor: colors.primary, opacity: pressed ? 0.75 : 1 },
-          ]}
-          onPress={() => router.push("/settings")}
-          hitSlop={8}
-          accessibilityLabel="Settings"
-        >
-          <Feather name="settings" size={20} color="#fff" />
-        </Pressable>
+
+        <View style={styles.headerActions}>
+          {editMode ? (
+            <>
+              <Pressable
+                onPress={onReset}
+                style={({ pressed }) => [
+                  styles.headerBtn,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.headerBtnText, { color: colors.mutedForeground }]}>
+                  Reset
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={onDone}
+                style={({ pressed }) => [
+                  styles.headerBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    borderColor: colors.primary,
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.headerBtnText, { color: "#fff" }]}>Done</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Pressable
+                onPress={onEdit}
+                style={({ pressed }) => [
+                  styles.iconBtn,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+                hitSlop={8}
+                accessibilityLabel="Reorder trades"
+              >
+                <Feather name="grid" size={18} color={colors.mutedForeground} />
+              </Pressable>
+              <Pressable
+                onPress={() => router.push("/settings")}
+                style={({ pressed }) => [
+                  styles.iconBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    borderColor: colors.primary,
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+                hitSlop={8}
+                accessibilityLabel="Settings"
+              >
+                <Feather name="settings" size={18} color="#fff" />
+              </Pressable>
+            </>
+          )}
+        </View>
       </View>
 
-      {/* ── Trade list ─────────────────────────────────────────────────── */}
+      {editMode && (
+        <View
+          style={[
+            styles.editBanner,
+            {
+              backgroundColor: colors.primary + "15",
+              borderBottomColor: colors.primary + "30",
+            },
+          ]}
+        >
+          <Feather name="move" size={12} color={colors.primary} />
+          <Text style={[styles.editBannerText, { color: colors.primary }]}>
+            Grab the ≡ handle on any trade and drag to reorder
+          </Text>
+        </View>
+      )}
+    </>
+  );
+}
+
+// ─── Native list (with drag) ──────────────────────────────────────────────────
+
+function NativeList({
+  trades,
+  editMode,
+  onReorder,
+  bottomPad,
+}: {
+  trades: Trade[];
+  editMode: boolean;
+  onReorder: (ids: string[]) => void;
+  bottomPad: number;
+}) {
+  // Lazy import to avoid crashing on web
+  const [DraggableFlatList, setDFL] = useState<any>(null);
+  const [ScaleDecorator, setSD] = useState<any>(null);
+
+  useEffect(() => {
+    Promise.all([
+      import("react-native-draggable-flatlist").then((m) => m.default),
+      import("react-native-draggable-flatlist").then((m) => m.ScaleDecorator),
+    ]).then(([dfl, sd]) => {
+      setDFL(() => dfl);
+      setSD(() => sd);
+    });
+  }, []);
+
+  if (!DraggableFlatList || !ScaleDecorator) {
+    return (
       <FlatList
         data={trades}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(t) => t.id}
         contentContainerStyle={[styles.list, { paddingBottom: bottomPad }]}
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        renderItem={({ item: trade }) => {
-          const refCount = tradeReferences[trade.id]?.length ?? 0;
-          return (
-            <View
-              style={[
-                styles.card,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              {/* Trade identity row */}
-              <View style={styles.cardTop}>
-                <View
-                  style={[
-                    styles.cardIcon,
-                    { backgroundColor: trade.color + "22" },
-                  ]}
-                >
-                  <Feather
-                    name={trade.icon as keyof typeof Feather.glyphMap}
-                    size={24}
-                    color={trade.color}
-                  />
-                </View>
-                <View style={styles.cardInfo}>
-                  <Text style={[styles.cardName, { color: colors.foreground }]}>
-                    {trade.name}
-                  </Text>
-                  <Text
-                    style={[styles.cardMeta, { color: colors.mutedForeground }]}
-                  >
-                    {trade.calculators.length} calculators
-                    {refCount > 0 ? `  ·  ${refCount} references` : ""}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Divider */}
-              <View
-                style={[styles.divider, { backgroundColor: colors.border }]}
-              />
-
-              {/* Action buttons */}
-              <View style={styles.cardActions}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionBtn,
-                    styles.actionBtnLeft,
-                    {
-                      backgroundColor: trade.color + "18",
-                      borderColor: trade.color + "40",
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                  onPress={() => router.push(`/trade/${trade.id}`)}
-                >
-                  <Feather name="cpu" size={14} color={trade.color} />
-                  <Text style={[styles.actionBtnText, { color: trade.color }]}>
-                    Calculators
-                  </Text>
-                  <View
-                    style={[
-                      styles.actionBadge,
-                      { backgroundColor: trade.color + "30" },
-                    ]}
-                  >
-                    <Text
-                      style={[styles.actionBadgeText, { color: trade.color }]}
-                    >
-                      {trade.calculators.length}
-                    </Text>
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionBtn,
-                    styles.actionBtnRight,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: colors.border,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                  onPress={() => router.push(`/refs/${trade.id}`)}
-                >
-                  <Feather
-                    name="book-open"
-                    size={14}
-                    color={colors.mutedForeground}
-                  />
-                  <Text
-                    style={[
-                      styles.actionBtnText,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    References
-                  </Text>
-                  {refCount > 0 && (
-                    <View
-                      style={[
-                        styles.actionBadge,
-                        { backgroundColor: colors.muted },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.actionBadgeText,
-                          { color: colors.mutedForeground },
-                        ]}
-                      >
-                        {refCount}
-                      </Text>
-                    </View>
-                  )}
-                </Pressable>
-              </View>
-
-              {/* Color accent bar */}
-              <View
-                style={[styles.accentBar, { backgroundColor: trade.color }]}
-              />
-            </View>
-          );
-        }}
+        renderItem={({ item }) => (
+          <TradeCard trade={item} editMode={editMode} />
+        )}
       />
+    );
+  }
+
+  return (
+    <DraggableFlatList
+      data={trades}
+      onDragEnd={({ data }: { data: Trade[] }) =>
+        onReorder(data.map((t: Trade) => t.id))
+      }
+      keyExtractor={(item: Trade) => item.id}
+      contentContainerStyle={[styles.list, { paddingBottom: bottomPad }]}
+      showsVerticalScrollIndicator={false}
+      activationDistance={editMode ? 4 : 9999}
+      ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+      renderItem={({
+        item,
+        drag,
+        isActive,
+      }: {
+        item: Trade;
+        drag: () => void;
+        isActive: boolean;
+      }) => (
+        <ScaleDecorator activeScale={1.04}>
+          <TradeCard
+            trade={item}
+            drag={drag}
+            isActive={isActive}
+            editMode={editMode}
+          />
+        </ScaleDecorator>
+      )}
+    />
+  );
+}
+
+// ─── Home Screen ──────────────────────────────────────────────────────────────
+
+export default function HomeScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { orderedTrades, saveOrder, resetOrder } = useTradeOrder();
+  const [editMode, setEditMode] = useState(false);
+
+  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
+
+  const handleDone = useCallback(() => setEditMode(false), []);
+  const handleEdit = useCallback(() => setEditMode(true), []);
+  const handleReset = useCallback(() => {
+    resetOrder();
+    setEditMode(false);
+  }, [resetOrder]);
+
+  return (
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <Header
+        editMode={editMode}
+        onEdit={handleEdit}
+        onDone={handleDone}
+        onReset={handleReset}
+      />
+
+      {Platform.OS === "web" ? (
+        /* Web: plain list, no drag */
+        <FlatList
+          data={orderedTrades}
+          keyExtractor={(t) => t.id}
+          contentContainerStyle={[styles.list, { paddingBottom: bottomPad }]}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          renderItem={({ item }) => (
+            <TradeCard trade={item} editMode={editMode} />
+          )}
+        />
+      ) : (
+        /* Native: full drag-to-reorder */
+        <NativeList
+          trades={orderedTrades}
+          editMode={editMode}
+          onReorder={saveOrder}
+          bottomPad={bottomPad}
+        />
+      )}
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  screen: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerLeft: { flex: 1 },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 26,
     fontFamily: "Inter_700Bold",
     letterSpacing: -0.5,
   },
   headerSub: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "Inter_400Regular",
     marginTop: 2,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
-  settingsBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+  headerActions: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  list: {
-    padding: 14,
-    paddingTop: 14,
+  headerBtn: {
+    borderRadius: 11,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  headerBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  editBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  editBannerText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+  },
+  list: { padding: 14, paddingTop: 12 },
+  cardWrap: { borderRadius: 18 },
   card: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     overflow: "hidden",
   },
@@ -238,23 +498,24 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
   },
-  cardIcon: {
-    width: 46,
-    height: 46,
+  tradeIcon: {
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  cardInfo: { flex: 1 },
-  cardName: {
+  tradeInfo: { flex: 1 },
+  tradeName: {
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
     marginBottom: 2,
   },
-  cardMeta: {
+  tradeMeta: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
   },
+  dragHandle: { padding: 6 },
   divider: {
     height: StyleSheet.hairlineWidth,
     marginHorizontal: 14,
@@ -273,26 +534,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     paddingVertical: 9,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
   },
-  actionBtnLeft: {},
-  actionBtnRight: {},
-  actionBtnText: {
+  actionLabel: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
   },
-  actionBadge: {
+  badge: {
     borderRadius: 6,
     paddingHorizontal: 5,
     paddingVertical: 1,
     minWidth: 20,
     alignItems: "center",
   },
-  actionBadgeText: {
+  badgeText: {
     fontSize: 11,
     fontFamily: "Inter_700Bold",
   },
-  accentBar: {
-    height: 3,
-  },
+  accentBar: { height: 3 },
 });

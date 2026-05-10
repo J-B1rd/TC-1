@@ -21,7 +21,6 @@ export default function TradeScreen() {
   const insets = useSafeAreaInsets();
   const trade = getTradeById(id ?? "");
   const refCount = tradeReferences[id ?? ""]?.length ?? 0;
-
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
 
   if (!trade) {
@@ -33,64 +32,58 @@ export default function TradeScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <FlatList
         data={trade.calculators}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[styles.list, { paddingBottom: bottomPad }]}
         showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         ListHeaderComponent={
-          <>
+          <View style={styles.listHeader}>
+            {/* Trade identity */}
             <View
               style={[
-                styles.tradeHeader,
+                styles.tradeHero,
                 {
-                  backgroundColor: trade.color + "18",
-                  borderColor: trade.color + "33",
+                  backgroundColor: trade.color + "14",
+                  borderColor: trade.color + "2A",
                 },
               ]}
             >
               <View
-                style={[
-                  styles.tradeIconBg,
-                  { backgroundColor: trade.color + "2A" },
-                ]}
+                style={[styles.heroIcon, { backgroundColor: trade.color + "25" }]}
               >
                 <Feather
                   name={trade.icon as keyof typeof Feather.glyphMap}
-                  size={32}
+                  size={28}
                   color={trade.color}
                 />
               </View>
-              <Text style={[styles.tradeTitle, { color: colors.foreground }]}>
+              <Text style={[styles.heroName, { color: colors.foreground }]}>
                 {trade.name}
               </Text>
-              <Text style={[styles.tradeSub, { color: colors.mutedForeground }]}>
+              <Text style={[styles.heroMeta, { color: colors.mutedForeground }]}>
                 {trade.calculators.length} calculators
               </Text>
 
-              {/* Quick link to references */}
               {refCount > 0 && (
                 <Pressable
+                  onPress={() => router.push(`/refs/${trade.id}`)}
                   style={({ pressed }) => [
-                    styles.refsLink,
+                    styles.refsBtn,
                     {
                       backgroundColor: colors.background,
                       borderColor: colors.border,
                       opacity: pressed ? 0.7 : 1,
                     },
                   ]}
-                  onPress={() => router.push(`/refs/${trade.id}`)}
                 >
                   <Feather name="book-open" size={13} color={trade.color} />
-                  <Text style={[styles.refsLinkText, { color: trade.color }]}>
+                  <Text style={[styles.refsBtnText, { color: trade.color }]}>
                     View {refCount} Field Reference{refCount !== 1 ? "s" : ""}
                   </Text>
-                  <Feather
-                    name="chevron-right"
-                    size={13}
-                    color={trade.color}
-                  />
+                  <Feather name="chevron-right" size={13} color={trade.color} />
                 </Pressable>
               )}
             </View>
@@ -98,7 +91,7 @@ export default function TradeScreen() {
             <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
               CALCULATORS
             </Text>
-          </>
+          </View>
         }
         renderItem={({ item: calc }) => (
           <Pressable
@@ -107,67 +100,71 @@ export default function TradeScreen() {
               {
                 backgroundColor: colors.card,
                 borderColor: colors.border,
-                opacity: pressed ? 0.7 : 1,
-                transform: [{ scale: pressed ? 0.98 : 1 }],
+                opacity: pressed ? 0.75 : 1,
+                transform: [{ scale: pressed ? 0.985 : 1 }],
               },
             ]}
             onPress={() => router.push(`/calc/${trade.id}--${calc.id}`)}
           >
-            <View style={styles.calcRowLeft}>
+            <View
+              style={[styles.calcAccentDot, { backgroundColor: trade.color }]}
+            />
+            <View style={styles.calcText}>
               <Text style={[styles.calcName, { color: colors.foreground }]}>
                 {calc.name}
               </Text>
               <Text
                 style={[styles.calcDesc, { color: colors.mutedForeground }]}
+                numberOfLines={2}
               >
                 {calc.description}
               </Text>
             </View>
             <Feather
               name="chevron-right"
-              size={18}
+              size={16}
               color={colors.mutedForeground}
             />
           </Pressable>
         )}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  screen: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: { padding: 16, gap: 0 },
-  tradeHeader: {
-    borderRadius: 16,
+  list: { padding: 14 },
+  listHeader: { gap: 14, marginBottom: 4 },
+
+  tradeHero: {
+    borderRadius: 18,
+    borderWidth: 1,
     padding: 20,
     alignItems: "center",
-    marginBottom: 16,
-    borderWidth: 1,
+    gap: 6,
   },
-  tradeIconBg: {
-    width: 64,
-    height: 64,
+  heroIcon: {
+    width: 60,
+    height: 60,
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    marginBottom: 6,
   },
-  tradeTitle: {
-    fontSize: 24,
+  heroName: {
+    fontSize: 22,
     fontFamily: "Inter_700Bold",
-    marginBottom: 4,
   },
-  tradeSub: {
+  heroMeta: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 14,
+    letterSpacing: 0.8,
+    marginBottom: 6,
   },
-  refsLink: {
+  refsBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -175,26 +172,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    marginTop: 4,
   },
-  refsLinkText: {
+  refsBtnText: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
   },
+
   sectionLabel: {
     fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.8,
-    marginBottom: 10,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1,
     marginLeft: 2,
   },
+
   calcRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
     borderRadius: 14,
-    padding: 16,
     borderWidth: 1,
+    padding: 16,
   },
-  calcRowLeft: { flex: 1, marginRight: 8 },
+  calcAccentDot: {
+    width: 4,
+    height: 36,
+    borderRadius: 2,
+    flexShrink: 0,
+  },
+  calcText: { flex: 1 },
   calcName: {
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
