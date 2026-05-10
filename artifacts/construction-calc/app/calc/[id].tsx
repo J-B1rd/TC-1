@@ -332,7 +332,7 @@ export default function CalcScreen() {
                       inputRefs.current[numIdx + 1]?.focus();
                     }}
                     tradeColor={tradeColor}
-                    autoFocus={idx === 0}
+                    autoFocus={false}
                   />
                 )}
                 {!isLast && (

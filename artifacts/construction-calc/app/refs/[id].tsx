@@ -168,7 +168,7 @@ export default function RefsScreen() {
           <ReferenceCard
             item={item}
             tradeColor={trade.color}
-            defaultOpen={index === 0}
+            defaultOpen={false}
           />
         )}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}

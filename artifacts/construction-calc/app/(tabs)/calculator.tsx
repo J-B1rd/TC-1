@@ -1,9 +1,8 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 import {
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -13,9 +12,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Convert decimal inches to ft + in + fraction string */
 function inchesToFtIn(totalInches: number): string {
   const negative = totalInches < 0;
   const absIn = Math.abs(totalInches);
@@ -23,757 +21,352 @@ function inchesToFtIn(totalInches: number): string {
   const remainIn = absIn % 12;
   const wholeIn = Math.floor(remainIn);
   const fracDec = remainIn - wholeIn;
-
   const fracs: [number, string][] = [
-    [0, ""],
-    [1 / 16, "¹⁄₁₆"],
-    [1 / 8, "⅛"],
-    [3 / 16, "³⁄₁₆"],
-    [1 / 4, "¼"],
-    [5 / 16, "⁵⁄₁₆"],
-    [3 / 8, "⅜"],
-    [7 / 16, "⁷⁄₁₆"],
-    [1 / 2, "½"],
-    [9 / 16, "⁹⁄₁₆"],
-    [5 / 8, "⅝"],
-    [11 / 16, "¹¹⁄₁₆"],
-    [3 / 4, "¾"],
-    [13 / 16, "¹³⁄₁₆"],
-    [7 / 8, "⅞"],
-    [15 / 16, "¹⁵⁄₁₆"],
+    [0, ""], [1/16,"¹⁄₁₆"], [1/8,"⅛"], [3/16,"³⁄₁₆"], [1/4,"¼"],
+    [5/16,"⁵⁄₁₆"], [3/8,"⅜"], [7/16,"⁷⁄₁₆"], [1/2,"½"], [9/16,"⁹⁄₁₆"],
+    [5/8,"⅝"], [11/16,"¹¹⁄₁₆"], [3/4,"¾"], [13/16,"¹³⁄₁₆"], [7/8,"⅞"], [15/16,"¹⁵⁄₁₆"],
   ];
-
   let closest = fracs[0];
   let minDiff = Math.abs(fracDec - fracs[0][0]);
   for (const f of fracs) {
     const diff = Math.abs(fracDec - f[0]);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = f;
-    }
+    if (diff < minDiff) { minDiff = diff; closest = f; }
   }
-
-  // handle rounding up to next inch
   let displayIn = wholeIn;
   let displayFrac = closest[1];
-  if (closest[0] >= 1 - 0.001) {
-    displayIn += 1;
-    displayFrac = "";
-  }
+  if (closest[0] >= 1 - 0.001) { displayIn += 1; displayFrac = ""; }
   let displayFt = ft;
-  if (displayIn >= 12) {
-    displayFt += 1;
-    displayIn = 0;
-  }
-
+  if (displayIn >= 12) { displayFt += 1; displayIn = 0; }
   const sign = negative ? "-" : "";
   if (displayFt === 0 && displayIn === 0 && !displayFrac) return `${sign}0"`;
-  if (displayFt === 0)
-    return `${sign}${displayIn}${displayFrac ? " " + displayFrac : ""}"`;
+  if (displayFt === 0) return `${sign}${displayIn}${displayFrac ? " "+displayFrac : ""}"`;
   if (displayIn === 0 && !displayFrac) return `${sign}${displayFt}'`;
-  return `${sign}${displayFt}' ${displayIn}${displayFrac ? " " + displayFrac : ""}"`;
+  return `${sign}${displayFt}' ${displayIn}${displayFrac ? " "+displayFrac : ""}"`;
 }
 
-/** Convert ft-in-fraction values to total decimal inches */
 function ftInToInches(ft: number, inches: number, fracVal: number): number {
   return ft * 12 + inches + fracVal;
 }
 
-/** Safely evaluate a simple arithmetic expression */
-function safeEval(expr: string): number | null {
-  try {
-    // Replace × and ÷ for eval
-    const sanitised = expr
-      .replace(/×/g, "*")
-      .replace(/÷/g, "/")
-      .replace(/[^0-9+\-*/.()% ]/g, "");
-    // eslint-disable-next-line no-new-func
-    const result = Function(`"use strict"; return (${sanitised})`)();
-    if (typeof result === "number" && isFinite(result)) return result;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 function formatNumber(n: number): string {
   if (!isFinite(n)) return "Error";
-  // Show up to 10 sig digits, strip trailing zeros
-  const s = parseFloat(n.toPrecision(10)).toString();
-  return s;
+  return parseFloat(n.toPrecision(10)).toString();
 }
-
-// ─── Types ─────────────────────────────────────────────────────────────────
 
 type Mode = "standard" | "construction";
+interface HistoryItem { expr: string; result: string; }
+interface ConstInput { feet: string; inches: string; frac: number; fracLabel: string; }
+function emptyConst(): ConstInput { return { feet: "", inches: "", frac: 0, fracLabel: "" }; }
 
-interface HistoryItem {
-  expr: string;
-  result: string;
-}
-
-interface ConstInput {
-  feet: string;
-  inches: string;
-  frac: number; // decimal 0–<1
-  fracLabel: string;
-}
-
-const FRACTIONS: { label: string; val: number }[] = [
-  { label: "¼", val: 1 / 4 },
-  { label: "½", val: 1 / 2 },
-  { label: "¾", val: 3 / 4 },
-  { label: "⅛", val: 1 / 8 },
-  { label: "⅜", val: 3 / 8 },
-  { label: "⅝", val: 5 / 8 },
-  { label: "⅞", val: 7 / 8 },
-  { label: "¹⁄₁₆", val: 1 / 16 },
-  { label: "³⁄₁₆", val: 3 / 16 },
+const FRACTIONS = [
+  { label: "¼", val: 1/4 }, { label: "½", val: 1/2 }, { label: "¾", val: 3/4 },
+  { label: "⅛", val: 1/8 }, { label: "⅜", val: 3/8 }, { label: "⅝", val: 5/8 },
+  { label: "⅞", val: 7/8 }, { label: "¹⁄₁₆", val: 1/16 }, { label: "³⁄₁₆", val: 3/16 },
 ];
 
-function emptyConstInput(): ConstInput {
-  return { feet: "", inches: "", frac: 0, fracLabel: "" };
-}
+// ─── Button ──────────────────────────────────────────────────────────────────
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
-
-function CalcButton({
-  label,
-  onPress,
-  flex,
-  variant,
-  accentColor,
-  small,
+function Btn({
+  label, onPress, variant, accent, sm,
 }: {
-  label: string | React.ReactNode;
+  label: string;
   onPress: () => void;
-  flex?: number;
-  variant?: "primary" | "operator" | "action" | "default" | "accent";
-  accentColor?: string;
-  small?: boolean;
+  variant?: "primary" | "op" | "action" | "accent";
+  accent?: string;
+  sm?: boolean;
 }) {
   const colors = useColors();
-  const isDark = useColorScheme() === "dark";
-
+  const dark = useColorScheme() === "dark";
   const bg =
-    variant === "primary"
-      ? colors.primary
-      : variant === "operator"
-      ? (isDark ? "#2A2A3A" : "#E8E8F0")
-      : variant === "action"
-      ? (isDark ? "#333" : "#D1D5DB")
-      : variant === "accent" && accentColor
-      ? accentColor + "22"
-      : colors.card;
-
-  const textColor =
-    variant === "primary"
-      ? "#fff"
-      : variant === "operator"
-      ? colors.primary
-      : variant === "accent" && accentColor
-      ? accentColor
-      : colors.foreground;
-
+    variant === "primary" ? colors.primary :
+    variant === "op"      ? (dark ? "#2A2A3A" : "#E2E2EC") :
+    variant === "action"  ? (dark ? "#3A3A3C" : "#D1D5DB") :
+    variant === "accent" && accent ? accent + "22" :
+    colors.card;
+  const tc =
+    variant === "primary" ? "#fff" :
+    variant === "op"      ? colors.primary :
+    variant === "accent" && accent ? accent :
+    colors.foreground;
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.btn,
-        {
-          flex: flex ?? 1,
-          backgroundColor: bg,
-          opacity: pressed ? 0.65 : 1,
-          transform: [{ scale: pressed ? 0.95 : 1 }],
-        },
+        { backgroundColor: bg, opacity: pressed ? 0.6 : 1,
+          transform: [{ scale: pressed ? 0.93 : 1 }] },
       ]}
-      hitSlop={4}
     >
-      {typeof label === "string" ? (
-        <Text
-          style={[
-            styles.btnText,
-            small && { fontSize: 14 },
-            { color: textColor },
-          ]}
-        >
-          {label}
-        </Text>
-      ) : (
-        label
-      )}
+      <Text style={[styles.btnTxt, sm && { fontSize: 15 }, { color: tc }]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
-// ─── Standard Calculator ────────────────────────────────────────────────────
+// ─── Standard ────────────────────────────────────────────────────────────────
 
-function StandardCalculator({
-  history,
-  onHistory,
-}: {
-  history: HistoryItem[];
-  onHistory: (item: HistoryItem) => void;
-}) {
+function Standard({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
   const colors = useColors();
   const [display, setDisplay] = useState("0");
-  const [expression, setExpression] = useState("");
+  const [expr, setExpr] = useState("");
   const [pendingOp, setPendingOp] = useState<string | null>(null);
   const [pendingVal, setPendingVal] = useState<number | null>(null);
   const [justCalc, setJustCalc] = useState(false);
 
-  const inputDigit = (d: string) => {
-    if (justCalc) {
-      setDisplay(d);
-      setExpression("");
-      setJustCalc(false);
-      return;
-    }
-    setDisplay((prev) => (prev === "0" ? d : prev.length < 15 ? prev + d : prev));
+  const digit = (d: string) => {
+    if (justCalc) { setDisplay(d); setExpr(""); setJustCalc(false); return; }
+    setDisplay(p => p === "0" ? d : p.length < 14 ? p + d : p);
   };
-
-  const inputDot = () => {
+  const dot = () => {
     if (justCalc) { setDisplay("0."); setJustCalc(false); return; }
-    if (!display.includes(".")) setDisplay((d) => d + ".");
+    if (!display.includes(".")) setDisplay(d => d + ".");
   };
+  const apply = (a: number, b: number, op: string) =>
+    op === "+" ? a+b : op === "-" ? a-b : op === "×" ? a*b :
+    op === "÷" ? (b !== 0 ? a/b : NaN) : op === "%" ? (a*b)/100 : b;
 
-  const handleOp = (op: string) => {
+  const op = (o: string) => {
     const cur = parseFloat(display);
     if (pendingOp && pendingVal !== null && !justCalc) {
-      const res = applyOp(pendingVal, cur, pendingOp);
-      setDisplay(formatNumber(res));
-      setExpression(`${formatNumber(res)} ${op}`);
-      setPendingVal(res);
-    } else {
-      setExpression(`${display} ${op}`);
-      setPendingVal(cur);
-    }
-    setPendingOp(op);
-    setJustCalc(true);
+      const res = apply(pendingVal, cur, pendingOp);
+      setDisplay(formatNumber(res)); setExpr(`${formatNumber(res)} ${o}`); setPendingVal(res);
+    } else { setExpr(`${display} ${o}`); setPendingVal(cur); }
+    setPendingOp(o); setJustCalc(true);
   };
-
-  const applyOp = (a: number, b: number, op: string): number => {
-    if (op === "+") return a + b;
-    if (op === "-") return a - b;
-    if (op === "×") return a * b;
-    if (op === "÷") return b !== 0 ? a / b : NaN;
-    if (op === "%") return (a * b) / 100;
-    return b;
-  };
-
-  const handleEquals = () => {
+  const equals = () => {
     if (!pendingOp || pendingVal === null) return;
     const cur = parseFloat(display);
-    const res = applyOp(pendingVal, cur, pendingOp);
-    const resultStr = formatNumber(res);
-    const exprStr = `${expression} ${display} =`;
-    onHistory({ expr: exprStr, result: resultStr });
-    setDisplay(resultStr);
-    setExpression(exprStr);
-    setPendingOp(null);
-    setPendingVal(null);
-    setJustCalc(true);
+    const res = apply(pendingVal, cur, pendingOp);
+    const rs = formatNumber(res);
+    onHistory({ expr: `${expr} ${display} =`, result: rs });
+    setDisplay(rs); setExpr(`${expr} ${display} =`);
+    setPendingOp(null); setPendingVal(null); setJustCalc(true);
   };
-
-  const handleClear = () => {
-    setDisplay("0");
-    setExpression("");
-    setPendingOp(null);
-    setPendingVal(null);
-    setJustCalc(false);
-  };
-
-  const handleBackspace = () => {
-    if (justCalc) return;
-    setDisplay((d) => (d.length > 1 ? d.slice(0, -1) : "0"));
-  };
-
-  const handlePercent = () => {
-    const val = parseFloat(display) / 100;
-    setDisplay(formatNumber(val));
-  };
-
-  const handlePlusMinus = () => {
-    setDisplay((d) => (d.startsWith("-") ? d.slice(1) : "-" + d));
-  };
+  const clear = () => { setDisplay("0"); setExpr(""); setPendingOp(null); setPendingVal(null); setJustCalc(false); };
+  const back = () => { if (justCalc) return; setDisplay(d => d.length > 1 ? d.slice(0,-1) : "0"); };
+  const pct = () => setDisplay(formatNumber(parseFloat(display)/100));
+  const pm = () => setDisplay(d => d.startsWith("-") ? d.slice(1) : "-"+d);
 
   return (
     <View style={{ flex: 1 }}>
       {/* Display */}
-      <View
-        style={[
-          styles.display,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text
-          style={[styles.expressionText, { color: colors.mutedForeground }]}
-          numberOfLines={1}
-        >
-          {expression || " "}
+      <View style={[styles.display, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.exprTxt, { color: colors.mutedForeground }]} numberOfLines={1}>
+          {expr || " "}
         </Text>
-        <Text
-          style={[styles.displayText, { color: colors.foreground }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
+        <Text style={[styles.displayTxt, { color: colors.foreground }]} numberOfLines={1} adjustsFontSizeToFit>
           {display}
         </Text>
       </View>
 
-      {/* Buttons */}
-      <View style={styles.btnGrid}>
-        <View style={styles.btnRow}>
-          <CalcButton label="C" onPress={handleClear} variant="action" />
-          <CalcButton label="+/-" onPress={handlePlusMinus} variant="action" />
-          <CalcButton label="%" onPress={handlePercent} variant="action" />
-          <CalcButton label="÷" onPress={() => handleOp("÷")} variant="operator" />
+      {/* Grid — flex:1 so it fills all remaining space */}
+      <View style={styles.grid}>
+        <View style={styles.row}>
+          <Btn label="C"   onPress={clear} variant="action" />
+          <Btn label="+/-" onPress={pm}    variant="action" />
+          <Btn label="%"   onPress={pct}   variant="action" />
+          <Btn label="÷"   onPress={() => op("÷")} variant="op" />
         </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="7" onPress={() => inputDigit("7")} />
-          <CalcButton label="8" onPress={() => inputDigit("8")} />
-          <CalcButton label="9" onPress={() => inputDigit("9")} />
-          <CalcButton label="×" onPress={() => handleOp("×")} variant="operator" />
+        <View style={styles.row}>
+          <Btn label="7" onPress={() => digit("7")} />
+          <Btn label="8" onPress={() => digit("8")} />
+          <Btn label="9" onPress={() => digit("9")} />
+          <Btn label="×" onPress={() => op("×")} variant="op" />
         </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="4" onPress={() => inputDigit("4")} />
-          <CalcButton label="5" onPress={() => inputDigit("5")} />
-          <CalcButton label="6" onPress={() => inputDigit("6")} />
-          <CalcButton label="-" onPress={() => handleOp("-")} variant="operator" />
+        <View style={styles.row}>
+          <Btn label="4" onPress={() => digit("4")} />
+          <Btn label="5" onPress={() => digit("5")} />
+          <Btn label="6" onPress={() => digit("6")} />
+          <Btn label="−" onPress={() => op("-")} variant="op" />
         </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="1" onPress={() => inputDigit("1")} />
-          <CalcButton label="2" onPress={() => inputDigit("2")} />
-          <CalcButton label="3" onPress={() => inputDigit("3")} />
-          <CalcButton label="+" onPress={() => handleOp("+")} variant="operator" />
+        <View style={styles.row}>
+          <Btn label="1" onPress={() => digit("1")} />
+          <Btn label="2" onPress={() => digit("2")} />
+          <Btn label="3" onPress={() => digit("3")} />
+          <Btn label="+" onPress={() => op("+")} variant="op" />
         </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="⌫" onPress={handleBackspace} variant="action" />
-          <CalcButton label="0" onPress={() => inputDigit("0")} />
-          <CalcButton label="." onPress={inputDot} />
-          <CalcButton label="=" onPress={handleEquals} variant="primary" />
+        <View style={styles.row}>
+          <Btn label="⌫" onPress={back} variant="action" />
+          <Btn label="0" onPress={() => digit("0")} />
+          <Btn label="." onPress={dot} />
+          <Btn label="=" onPress={equals} variant="primary" />
         </View>
       </View>
-
-      {/* History */}
-      {history.length > 0 && (
-        <View
-          style={[
-            styles.historyBox,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.historyLabel, { color: colors.mutedForeground }]}>
-            HISTORY
-          </Text>
-          {history
-            .slice(-4)
-            .reverse()
-            .map((h, i) => (
-              <View key={i} style={styles.historyRow}>
-                <Text
-                  style={[styles.historyExpr, { color: colors.mutedForeground }]}
-                  numberOfLines={1}
-                >
-                  {h.expr}
-                </Text>
-                <Text style={[styles.historyResult, { color: colors.foreground }]}>
-                  {h.result}
-                </Text>
-              </View>
-            ))}
-        </View>
-      )}
     </View>
   );
 }
 
-// ─── Construction Calculator ────────────────────────────────────────────────
+// ─── Construction ─────────────────────────────────────────────────────────────
 
-function ConstructionCalculator({
-  history,
-  onHistory,
-}: {
-  history: HistoryItem[];
-  onHistory: (item: HistoryItem) => void;
-}) {
+function Construction({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
   const colors = useColors();
-  const tradeOrange = "#D97706";
-
-  // Current entry being built
-  const [entry, setEntry] = useState<ConstInput>(emptyConstInput());
-  const [activeField, setActiveField] = useState<"feet" | "inches">("feet");
-
-  // Pending operation (like a standard calc)
-  const [pendingOp, setPendingOp] = useState<string | null>(null);
-  const [pendingInches, setPendingInches] = useState<number | null>(null); // total inches
-  const [resultInches, setResultInches] = useState<number | null>(null);
-  const [expression, setExpression] = useState("");
+  const orange = "#D97706";
+  const [entry, setEntry] = useState<ConstInput>(emptyConst());
+  const [active, setActive] = useState<"feet"|"inches">("feet");
+  const [pendingOp, setPendingOp] = useState<string|null>(null);
+  const [pendingIn, setPendingIn] = useState<number|null>(null);
+  const [resultIn, setResultIn] = useState<number|null>(null);
+  const [expr, setExpr] = useState("");
   const [justCalc, setJustCalc] = useState(false);
 
   const entryInches = ftInToInches(
-    parseFloat(entry.feet || "0"),
-    parseFloat(entry.inches || "0"),
-    entry.frac
+    parseFloat(entry.feet||"0"), parseFloat(entry.inches||"0"), entry.frac
   );
-
   const displayStr = (() => {
-    if (resultInches !== null && justCalc) return inchesToFtIn(resultInches);
-    const ft = parseInt(entry.feet || "0");
-    const ins = parseInt(entry.inches || "0");
+    if (resultIn !== null && justCalc) return inchesToFtIn(resultIn);
+    const ft = parseInt(entry.feet||"0");
+    const ins = parseInt(entry.inches||"0");
     const frac = entry.fracLabel;
-    if (ft === 0 && ins === 0 && !frac) return "0\"";
-    if (ft === 0) return `${ins}${frac ? " " + frac : ""}"`;
-    if (ins === 0 && !frac) return `${ft}'`;
-    return `${ft}' ${ins}${frac ? " " + frac : ""}"`;
+    if (ft===0 && ins===0 && !frac) return '0"';
+    if (ft===0) return `${ins}${frac?" "+frac:""}"`;
+    if (ins===0 && !frac) return `${ft}'`;
+    return `${ft}' ${ins}${frac?" "+frac:""}"`; 
   })();
 
-  const inputDigit = (d: string) => {
+  const digit = (d: string) => {
     if (justCalc) {
-      setEntry(emptyConstInput());
-      setResultInches(null);
-      setJustCalc(false);
-      setActiveField("feet");
-      setEntry((e) => ({ ...e, [activeField === "feet" ? "feet" : "inches"]: d }));
-      return;
+      setEntry({ ...emptyConst(), [active]: d });
+      setResultIn(null); setJustCalc(false); return;
     }
-    setEntry((e) => {
-      const field = activeField;
-      const cur = e[field] as string;
-      const next = cur === "0" ? d : cur + d;
-      return { ...e, [field]: next };
-    });
+    setEntry(e => { const cur = e[active] as string; return { ...e, [active]: cur===''||cur==='0'?d:cur+d }; });
   };
-
-  const handleFrac = (val: number, label: string) => {
-    if (justCalc) {
-      setEntry({ ...emptyConstInput(), frac: val, fracLabel: label });
-      setResultInches(null);
-      setJustCalc(false);
-      return;
-    }
-    setEntry((e) => ({ ...e, frac: val, fracLabel: label }));
+  const frac = (val: number, label: string) => {
+    if (justCalc) { setEntry({ ...emptyConst(), frac: val, fracLabel: label }); setResultIn(null); setJustCalc(false); return; }
+    setEntry(e => ({ ...e, frac: val, fracLabel: label }));
   };
+  const applyOp = (a: number, b: number, o: string) =>
+    o==="+" ? a+b : o==="-" ? a-b : o==="×" ? a*b : o==="÷" && b!==0 ? a/b : 0;
 
-  const handleOp = (op: string) => {
-    if (justCalc && resultInches !== null) {
-      setPendingInches(resultInches);
-      setExpression(`${inchesToFtIn(resultInches)} ${op}`);
-      setPendingOp(op);
-      setJustCalc(false);
-      setEntry(emptyConstInput());
-      setResultInches(null);
-      return;
+  const doOp = (o: string) => {
+    if (justCalc && resultIn !== null) {
+      setPendingIn(resultIn); setExpr(`${inchesToFtIn(resultIn)} ${o}`);
+      setPendingOp(o); setJustCalc(false); setEntry(emptyConst()); setResultIn(null); return;
     }
     const cur = entryInches;
-    if (pendingOp && pendingInches !== null) {
-      const res = applyOp(pendingInches, cur, pendingOp);
-      setResultInches(res);
-      setExpression(`${inchesToFtIn(res)} ${op}`);
-      setPendingInches(res);
-    } else {
-      setExpression(`${inchesToFtIn(cur)} ${op}`);
-      setPendingInches(cur);
-    }
-    setPendingOp(op);
-    setJustCalc(true);
-    setEntry(emptyConstInput());
+    if (pendingOp && pendingIn !== null) {
+      const res = applyOp(pendingIn, cur, pendingOp);
+      setResultIn(res); setExpr(`${inchesToFtIn(res)} ${o}`); setPendingIn(res);
+    } else { setExpr(`${inchesToFtIn(cur)} ${o}`); setPendingIn(cur); }
+    setPendingOp(o); setJustCalc(true); setEntry(emptyConst());
   };
-
-  const applyOp = (a: number, b: number, op: string): number => {
-    if (op === "+") return a + b;
-    if (op === "-") return a - b;
-    if (op === "×") return a * b; // e.g., dimension × scalar
-    if (op === "÷") return b !== 0 ? a / b : 0;
-    return b;
-  };
-
-  const handleEquals = () => {
-    if (!pendingOp || pendingInches === null) return;
+  const equals = () => {
+    if (!pendingOp || pendingIn===null) return;
     const cur = entryInches;
-    const res = applyOp(pendingInches, cur, pendingOp);
-    const exprStr = `${expression} ${inchesToFtIn(cur)} =`;
-    onHistory({ expr: exprStr, result: inchesToFtIn(res) });
-    setResultInches(res);
-    setExpression(exprStr);
-    setPendingOp(null);
-    setPendingInches(null);
-    setJustCalc(true);
-    setEntry(emptyConstInput());
+    const res = applyOp(pendingIn, cur, pendingOp);
+    onHistory({ expr: `${expr} ${inchesToFtIn(cur)} =`, result: inchesToFtIn(res) });
+    setResultIn(res); setExpr(`${expr} ${inchesToFtIn(cur)} =`);
+    setPendingOp(null); setPendingIn(null); setJustCalc(true); setEntry(emptyConst());
   };
-
-  const handleClear = () => {
-    setEntry(emptyConstInput());
-    setPendingOp(null);
-    setPendingInches(null);
-    setResultInches(null);
-    setExpression("");
-    setJustCalc(false);
-    setActiveField("feet");
-  };
-
-  const handleBackspace = () => {
-    if (justCalc) return;
-    setEntry((e) => {
-      const field = activeField;
-      const cur = e[field] as string;
-      const next = cur.length > 1 ? cur.slice(0, -1) : "";
-      return { ...e, [field]: next };
-    });
-  };
-
-  // Quick conversions
-  const convertToDecimalFt = () => {
-    const totalIn = justCalc && resultInches !== null ? resultInches : entryInches;
-    const decFt = totalIn / 12;
-    onHistory({
-      expr: `${inchesToFtIn(totalIn)} → decimal ft`,
-      result: `${decFt.toFixed(4)} ft`,
-    });
-    setExpression(`${inchesToFtIn(totalIn)} → ${decFt.toFixed(4)} ft`);
-  };
-
-  const computeArea = () => {
-    if (pendingOp === "×" && pendingInches !== null) {
-      const cur = entryInches;
-      const sqIn = pendingInches * cur;
-      const sqFt = sqIn / 144;
-      const exprStr = `${inchesToFtIn(pendingInches)} × ${inchesToFtIn(cur)} = ${sqFt.toFixed(2)} ft²`;
-      onHistory({ expr: exprStr, result: `${sqFt.toFixed(2)} ft²` });
-      setExpression(exprStr);
-      setJustCalc(true);
-      setEntry(emptyConstInput());
-      setPendingOp(null);
-      setPendingInches(null);
-    }
+  const clear = () => { setEntry(emptyConst()); setPendingOp(null); setPendingIn(null); setResultIn(null); setExpr(""); setJustCalc(false); setActive("feet"); };
+  const back = () => { if (justCalc) return; setEntry(e => { const cur = e[active] as string; return { ...e, [active]: cur.length>1?cur.slice(0,-1):"" }; }); };
+  const decFt = () => {
+    const total = justCalc && resultIn!==null ? resultIn : entryInches;
+    const df = (total/12).toFixed(4);
+    onHistory({ expr: `${inchesToFtIn(total)} → dec ft`, result: `${df} ft` });
+    setExpr(`${inchesToFtIn(total)} = ${df} ft`);
   };
 
   return (
     <View style={{ flex: 1 }}>
       {/* Display */}
-      <View
-        style={[
-          styles.display,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text
-          style={[styles.expressionText, { color: colors.mutedForeground }]}
-          numberOfLines={1}
-        >
-          {expression || " "}
+      <View style={[styles.display, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.exprTxt, { color: colors.mutedForeground }]} numberOfLines={1}>
+          {expr || " "}
         </Text>
-        <Text
-          style={[styles.displayText, { color: colors.foreground }]}
-          adjustsFontSizeToFit
-          numberOfLines={1}
-        >
+        <Text style={[styles.displayTxt, { color: colors.foreground }]} adjustsFontSizeToFit numberOfLines={1}>
           {displayStr}
         </Text>
-
-        {/* ft / in field selector */}
-        <View style={styles.fieldRow}>
-          <Pressable
-            onPress={() => { setActiveField("feet"); if (justCalc) { setResultInches(null); setJustCalc(false); } }}
-            style={[
-              styles.fieldBtn,
-              {
-                backgroundColor: activeField === "feet" ? tradeOrange + "22" : colors.background,
-                borderColor: activeField === "feet" ? tradeOrange : colors.border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.fieldBtnText,
-                { color: activeField === "feet" ? tradeOrange : colors.mutedForeground },
-              ]}
-            >
-              ft
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => { setActiveField("inches"); if (justCalc) { setResultInches(null); setJustCalc(false); } }}
-            style={[
-              styles.fieldBtn,
-              {
-                backgroundColor: activeField === "inches" ? tradeOrange + "22" : colors.background,
-                borderColor: activeField === "inches" ? tradeOrange : colors.border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.fieldBtnText,
-                { color: activeField === "inches" ? tradeOrange : colors.mutedForeground },
-              ]}
-            >
-              in
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Fraction pad */}
-      <View
-        style={[
-          styles.fracPad,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.fracLabel, { color: colors.mutedForeground }]}>
-          FRACTIONS
-        </Text>
-        <View style={styles.fracRow}>
-          {FRACTIONS.map((f) => (
+        {/* ft / in toggle */}
+        <View style={styles.fieldToggleRow}>
+          {(["feet","inches"] as const).map(f => (
             <Pressable
-              key={f.label}
-              onPress={() => handleFrac(f.val, f.label)}
-              style={({ pressed }) => [
-                styles.fracBtn,
-                {
-                  backgroundColor:
-                    entry.fracLabel === f.label
-                      ? tradeOrange + "22"
-                      : colors.background,
-                  borderColor:
-                    entry.fracLabel === f.label ? tradeOrange : colors.border,
-                  opacity: pressed ? 0.6 : 1,
-                },
-              ]}
+              key={f}
+              onPress={() => { setActive(f); if (justCalc) { setResultIn(null); setJustCalc(false); } }}
+              style={[styles.fieldToggle, {
+                backgroundColor: active===f ? orange+"22" : colors.background,
+                borderColor: active===f ? orange : colors.border,
+              }]}
             >
-              <Text
-                style={[
-                  styles.fracBtnText,
-                  {
-                    color:
-                      entry.fracLabel === f.label
-                        ? tradeOrange
-                        : colors.foreground,
-                  },
-                ]}
-              >
-                {f.label}
+              <Text style={[styles.fieldToggleTxt, { color: active===f ? orange : colors.mutedForeground }]}>
+                {f === "feet" ? "ft" : "in"}
               </Text>
             </Pressable>
           ))}
+        </View>
+      </View>
+
+      {/* Fraction row — compact single line */}
+      <View style={[styles.fracRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {FRACTIONS.map(f => (
           <Pressable
-            onPress={() => handleFrac(0, "")}
-            style={({ pressed }) => [
-              styles.fracBtn,
-              {
-                backgroundColor:
-                  entry.frac === 0 && entry.fracLabel === ""
-                    ? tradeOrange + "22"
-                    : colors.background,
-                borderColor:
-                  entry.frac === 0 && entry.fracLabel === ""
-                    ? tradeOrange
-                    : colors.border,
-                opacity: pressed ? 0.6 : 1,
-              },
-            ]}
+            key={f.label}
+            onPress={() => frac(f.val, f.label)}
+            style={[styles.fracChip, {
+              backgroundColor: entry.fracLabel===f.label ? orange+"20" : colors.background,
+              borderColor: entry.fracLabel===f.label ? orange : colors.border,
+            }]}
           >
-            <Text
-              style={[
-                styles.fracBtnText,
-                {
-                  color:
-                    entry.frac === 0 && entry.fracLabel === ""
-                      ? tradeOrange
-                      : colors.mutedForeground,
-                },
-              ]}
-            >
-              0
+            <Text style={[styles.fracChipTxt, { color: entry.fracLabel===f.label ? orange : colors.foreground }]}>
+              {f.label}
             </Text>
           </Pressable>
-        </View>
-      </View>
-
-      {/* Number + ops grid */}
-      <View style={styles.btnGrid}>
-        <View style={styles.btnRow}>
-          <CalcButton label="C" onPress={handleClear} variant="action" />
-          <CalcButton
-            label="⌫"
-            onPress={handleBackspace}
-            variant="action"
-          />
-          <CalcButton
-            label="dec ft"
-            onPress={convertToDecimalFt}
-            variant="action"
-            small
-          />
-          <CalcButton label="÷" onPress={() => handleOp("÷")} variant="operator" />
-        </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="7" onPress={() => inputDigit("7")} />
-          <CalcButton label="8" onPress={() => inputDigit("8")} />
-          <CalcButton label="9" onPress={() => inputDigit("9")} />
-          <CalcButton label="×" onPress={() => handleOp("×")} variant="operator" />
-        </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="4" onPress={() => inputDigit("4")} />
-          <CalcButton label="5" onPress={() => inputDigit("5")} />
-          <CalcButton label="6" onPress={() => inputDigit("6")} />
-          <CalcButton label="-" onPress={() => handleOp("-")} variant="operator" />
-        </View>
-        <View style={styles.btnRow}>
-          <CalcButton label="1" onPress={() => inputDigit("1")} />
-          <CalcButton label="2" onPress={() => inputDigit("2")} />
-          <CalcButton label="3" onPress={() => inputDigit("3")} />
-          <CalcButton label="+" onPress={() => handleOp("+")} variant="operator" />
-        </View>
-        <View style={styles.btnRow}>
-          <CalcButton
-            label="ft²"
-            onPress={computeArea}
-            variant="accent"
-            accentColor={tradeOrange}
-            small
-          />
-          <CalcButton label="0" onPress={() => inputDigit("0")} />
-          <CalcButton label="00" onPress={() => { inputDigit("0"); inputDigit("0"); }} />
-          <CalcButton label="=" onPress={handleEquals} variant="primary" />
-        </View>
-      </View>
-
-      {/* History */}
-      {history.length > 0 && (
-        <View
-          style={[
-            styles.historyBox,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
+        ))}
+        <Pressable
+          onPress={() => frac(0,"")}
+          style={[styles.fracChip, {
+            backgroundColor: entry.frac===0&&entry.fracLabel==="" ? orange+"20" : colors.background,
+            borderColor: entry.frac===0&&entry.fracLabel==="" ? orange : colors.border,
+          }]}
         >
-          <Text style={[styles.historyLabel, { color: colors.mutedForeground }]}>
-            HISTORY
-          </Text>
-          {history
-            .slice(-4)
-            .reverse()
-            .map((h, i) => (
-              <View key={i} style={styles.historyRow}>
-                <Text
-                  style={[styles.historyExpr, { color: colors.mutedForeground }]}
-                  numberOfLines={1}
-                >
-                  {h.expr}
-                </Text>
-                <Text style={[styles.historyResult, { color: colors.foreground }]}>
-                  {h.result}
-                </Text>
-              </View>
-            ))}
+          <Text style={[styles.fracChipTxt, { color: entry.frac===0&&entry.fracLabel==="" ? orange : colors.mutedForeground }]}>0</Text>
+        </Pressable>
+      </View>
+
+      {/* Grid */}
+      <View style={styles.grid}>
+        <View style={styles.row}>
+          <Btn label="C"      onPress={clear} variant="action" />
+          <Btn label="⌫"      onPress={back}  variant="action" />
+          <Btn label="dec ft" onPress={decFt} variant="action" sm />
+          <Btn label="÷"      onPress={() => doOp("÷")} variant="op" />
         </View>
-      )}
+        <View style={styles.row}>
+          <Btn label="7" onPress={() => digit("7")} />
+          <Btn label="8" onPress={() => digit("8")} />
+          <Btn label="9" onPress={() => digit("9")} />
+          <Btn label="×" onPress={() => doOp("×")} variant="op" />
+        </View>
+        <View style={styles.row}>
+          <Btn label="4" onPress={() => digit("4")} />
+          <Btn label="5" onPress={() => digit("5")} />
+          <Btn label="6" onPress={() => digit("6")} />
+          <Btn label="−" onPress={() => doOp("-")} variant="op" />
+        </View>
+        <View style={styles.row}>
+          <Btn label="1" onPress={() => digit("1")} />
+          <Btn label="2" onPress={() => digit("2")} />
+          <Btn label="3" onPress={() => digit("3")} />
+          <Btn label="+" onPress={() => doOp("+")} variant="op" />
+        </View>
+        <View style={styles.row}>
+          <Btn label="ft²" onPress={() => {
+            if (pendingOp==="×" && pendingIn!==null) {
+              const sqFt = (pendingIn * entryInches)/144;
+              onHistory({ expr: `${inchesToFtIn(pendingIn)} × ${inchesToFtIn(entryInches)}`, result: `${sqFt.toFixed(2)} ft²` });
+              setExpr(`= ${sqFt.toFixed(2)} ft²`); setJustCalc(true); setEntry(emptyConst()); setPendingOp(null); setPendingIn(null);
+            }
+          }} variant="accent" accent={orange} sm />
+          <Btn label="0"  onPress={() => digit("0")} />
+          <Btn label="00" onPress={() => { digit("0"); digit("0"); }} />
+          <Btn label="="  onPress={equals} variant="primary" />
+        </View>
+      </View>
     </View>
   );
 }
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function CalculatorScreen() {
   const colors = useColors();
@@ -782,247 +375,105 @@ export default function CalculatorScreen() {
   const [stdHistory, setStdHistory] = useState<HistoryItem[]>([]);
   const [conHistory, setConHistory] = useState<HistoryItem[]>([]);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 10;
+  const topPad = Platform.OS === "web" ? 16 : insets.top + 16;
+  const bottomPad = Platform.OS === "web" ? 16 : insets.bottom + 8;
+  const history = mode === "standard" ? stdHistory : conHistory;
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: topPad + 16,
-            backgroundColor: colors.background,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
+      <View style={[styles.header, { paddingTop: topPad, borderBottomColor: colors.border }]}>
         <View>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            Calculator
-          </Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Calculator</Text>
           <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            {mode === "standard" ? "Standard arithmetic" : "Feet & inches"}
+            {mode === "standard" ? "Standard" : "Feet & Inches"}
           </Text>
         </View>
-
         {/* Mode toggle */}
-        <View
-          style={[
-            styles.modeToggle,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          {(["standard", "construction"] as Mode[]).map((m) => (
+        <View style={[styles.toggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {(["standard","construction"] as Mode[]).map(m => (
             <Pressable
               key={m}
               onPress={() => setMode(m)}
-              style={[
-                styles.modeBtn,
-                mode === m && {
-                  backgroundColor: colors.primary,
-                  shadowColor: colors.primary,
-                  shadowOpacity: 0.3,
-                  shadowRadius: 4,
-                  shadowOffset: { width: 0, height: 2 },
-                  elevation: 3,
-                },
-              ]}
+              style={[styles.toggleBtn, mode===m && { backgroundColor: colors.primary }]}
             >
-              <Feather
-                name={m === "standard" ? "hash" : "tool"}
-                size={13}
-                color={mode === m ? "#fff" : colors.mutedForeground}
-              />
-              <Text
-                style={[
-                  styles.modeBtnText,
-                  { color: mode === m ? "#fff" : colors.mutedForeground },
-                ]}
-              >
-                {m === "standard" ? "Standard" : "Ft & In"}
+              <Feather name={m==="standard"?"hash":"tool"} size={13} color={mode===m?"#fff":colors.mutedForeground} />
+              <Text style={[styles.toggleTxt, { color: mode===m?"#fff":colors.mutedForeground }]}>
+                {m==="standard"?"Std":"Ft & In"}
               </Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 14, paddingBottom: bottomPad }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="always"
-      >
-        {mode === "standard" ? (
-          <StandardCalculator
-            history={stdHistory}
-            onHistory={(item) => setStdHistory((h) => [...h, item])}
-          />
-        ) : (
-          <ConstructionCalculator
-            history={conHistory}
-            onHistory={(item) => setConHistory((h) => [...h, item])}
-          />
-        )}
-      </ScrollView>
+      {/* Last history line */}
+      {history.length > 0 && (
+        <View style={[styles.lastHistory, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <Text style={[styles.lastHistoryExpr, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {history[history.length-1].expr}
+          </Text>
+          <Text style={[styles.lastHistoryVal, { color: colors.foreground }]}>
+            = {history[history.length-1].result}
+          </Text>
+        </View>
+      )}
+
+      {/* Calculator body — flex:1 fills all remaining space */}
+      <View style={[styles.body, { paddingBottom: bottomPad }]}>
+        {mode === "standard"
+          ? <Standard onHistory={h => setStdHistory(p => [...p.slice(-9), h])} />
+          : <Construction onHistory={h => setConHistory(p => [...p.slice(-9), h])} />
+        }
+      </View>
     </View>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: {
-    fontSize: 26,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.5,
+  headerTitle: { fontSize: 24, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  headerSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.8 },
+  toggle: { flexDirection: "row", borderRadius: 12, borderWidth: 1, padding: 3, gap: 3 },
+  toggleBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 6 },
+  toggleTxt: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  lastHistory: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 7, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerSub: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    marginTop: 2,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  modeToggle: {
-    flexDirection: "row",
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 3,
-    gap: 3,
-  },
-  modeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    borderRadius: 9,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  modeBtnText: {
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-  },
+  lastHistoryExpr: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular" },
+  lastHistoryVal: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  body: { flex: 1, paddingHorizontal: 10, paddingTop: 10, gap: 8 },
+
+  // Display
   display: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 10,
-    minHeight: 96,
+    borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12,
     justifyContent: "flex-end",
   },
-  expressionText: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    marginBottom: 4,
-    textAlign: "right",
-  },
-  displayText: {
-    fontSize: 42,
-    fontFamily: "Inter_700Bold",
-    textAlign: "right",
-    letterSpacing: -1,
-  },
-  fieldRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 10,
-  },
-  fieldBtn: {
-    flex: 1,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  fieldBtnText: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  fracPad: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 10,
-  },
-  fracLabel: {
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.8,
-    marginBottom: 7,
-  },
+  exprTxt: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "right", marginBottom: 2 },
+  displayTxt: { fontSize: 46, fontFamily: "Inter_700Bold", textAlign: "right", letterSpacing: -2, minHeight: 56 },
+
+  // Ft/in toggle inside display
+  fieldToggleRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  fieldToggle: { flex: 1, borderRadius: 8, borderWidth: 1, paddingVertical: 6, alignItems: "center" },
+  fieldToggleTxt: { fontSize: 13, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5 },
+
+  // Fraction row
   fracRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
+    flexDirection: "row", flexWrap: "wrap", gap: 6,
+    borderRadius: 12, borderWidth: 1, padding: 8,
   },
-  fracBtn: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    minWidth: 40,
-    alignItems: "center",
-  },
-  fracBtnText: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-  },
-  btnGrid: {
-    gap: 8,
-  },
-  btnRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  btn: {
-    height: 58,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnText: {
-    fontSize: 22,
-    fontFamily: "Inter_500Medium",
-  },
-  historyBox: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 12,
-    marginTop: 12,
-  },
-  historyLabel: {
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  historyRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 4,
-    gap: 8,
-  },
-  historyExpr: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
-  historyResult: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-  },
+  fracChip: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 5, minWidth: 36, alignItems: "center" },
+  fracChipTxt: { fontSize: 14, fontFamily: "Inter_500Medium" },
+
+  // Button grid — each row is flex:1 so they share available height equally
+  grid: { flex: 1, gap: 8 },
+  row: { flex: 1, flexDirection: "row", gap: 8 },
+  btn: { flex: 1, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  btnTxt: { fontSize: 22, fontFamily: "Inter_500Medium" },
 });
