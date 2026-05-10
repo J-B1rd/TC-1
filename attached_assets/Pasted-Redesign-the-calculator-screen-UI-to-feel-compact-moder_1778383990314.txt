@@ -1,0 +1,89 @@
+Redesign the calculator screen UI to feel compact, modern, and professional like a premium tradesman app.
+
+Current problems:
+- Buttons are oversized
+- Layout feels clunky and crowded
+- Too much vertical spacing
+- Fraction row feels detached
+- Bottom nav icons are too large
+- Visual hierarchy is weak
+- Orange accent color is overpowering
+
+Apply these UI improvements:
+
+1. Reduce overall vertical padding by 20–30%
+- Tighten spacing between sections
+- Reduce dead space above the calculator display
+- Compress keypad height
+
+2. Make keypad buttons smaller and more balanced
+- Use square-ish buttons with subtle corner radius (14–16px)
+- Reduce button height significantly
+- Increase density without feeling cramped
+- Keep equal spacing between all keys
+
+3. Improve visual hierarchy
+- Main display should dominate
+- Secondary controls should fade visually
+- Fractions should look like utility chips instead of large buttons
+
+4. Redesign fraction row
+- Make fractions horizontally scrollable chips
+- Reduce chip height
+- Use darker inactive states
+- Highlight selected fraction subtly
+
+5. Reduce icon sizes globally
+- Bottom nav icons: reduce by ~25%
+- Top toolbar icons: reduce by ~20%
+- Action symbols (+ − × ÷): thinner weight
+
+6. Improve typography
+- Use semibold only for key actions
+- Use medium/regular elsewhere
+- Tighten letter spacing slightly
+- Reduce oversized numeric display text
+
+7. Refine color usage
+- Use orange ONLY for:
+  - active mode
+  - equals button
+  - selected state
+- Everything else should use dark grayscale palette
+- Reduce glow/saturation of orange
+
+8. Improve keypad layout proportions
+- Operator column should be narrower
+- Equals button should not overpower layout
+- Numeric keys should visually group together
+
+9. Add premium styling
+- Slight inner shadows
+- Softer borders
+- Subtle depth differences between panels
+- More matte appearance
+- Remove “toy-like” oversized UI feel
+
+10. Bottom navigation redesign
+- Make bar shorter
+- Reduce icon/text size
+- Increase elegance/minimalism
+- Add more breathing room horizontally instead of vertically
+
+11. Display area improvements
+- Shrink empty display height
+- Align numbers more cleanly right
+- Reduce giant “0” appearance
+- Make ft/in toggles feel integrated into display card
+
+12. General design direction
+Aim for:
+- Milwaukee/Festool/DeWalt premium tool aesthetic
+- Dense but readable
+- Professional contractor utility
+- Minimal but rugged
+- Industrial dark UI
+- Native iOS-quality spacing and proportions
+
+Do not change functionality.
+Only improve layout, sizing, spacing, hierarchy, and visual polish.
