@@ -1,12 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import Animated, {
@@ -20,9 +21,84 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Trade } from "@/data/calculators";
+import { trades } from "@/data/calculators";
 import { tradeReferences } from "@/data/references";
 import { useColors } from "@/hooks/useColors";
 import { useTradeOrder } from "@/hooks/useTradeOrder";
+
+// ─── Search Results ───────────────────────────────────────────────────────────
+
+interface SearchResult {
+  type: "trade" | "calc";
+  tradeId: string;
+  tradeName: string;
+  tradeColor: string;
+  calcId?: string;
+  calcName?: string;
+  calcDesc?: string;
+}
+
+function useSearch(query: string): SearchResult[] {
+  return useMemo(() => {
+    if (!query.trim()) return [];
+    const q = query.toLowerCase();
+    const results: SearchResult[] = [];
+    for (const t of trades) {
+      if (t.name.toLowerCase().includes(q)) {
+        results.push({ type: "trade", tradeId: t.id, tradeName: t.name, tradeColor: t.color });
+      }
+      for (const c of t.calculators) {
+        if (
+          c.name.toLowerCase().includes(q) ||
+          c.description.toLowerCase().includes(q)
+        ) {
+          results.push({
+            type: "calc",
+            tradeId: t.id,
+            tradeName: t.name,
+            tradeColor: t.color,
+            calcId: c.id,
+            calcName: c.name,
+            calcDesc: c.description,
+          });
+        }
+      }
+    }
+    return results.slice(0, 30);
+  }, [query]);
+}
+
+function SearchResultItem({ item }: { item: SearchResult }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.resultRow,
+        { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+      ]}
+      onPress={() =>
+        item.type === "calc"
+          ? router.push(`/calc/${item.tradeId}--${item.calcId}`)
+          : router.push(`/trade/${item.tradeId}`)
+      }
+    >
+      <View style={[styles.resultDot, { backgroundColor: item.tradeColor }]} />
+      <View style={styles.resultText}>
+        <Text style={[styles.resultName, { color: colors.foreground }]}>
+          {item.type === "calc" ? item.calcName : item.tradeName}
+        </Text>
+        <Text style={[styles.resultMeta, { color: colors.mutedForeground }]}>
+          {item.type === "calc" ? item.tradeName : "Trade — all calculators"}
+        </Text>
+      </View>
+      <Feather
+        name={item.type === "calc" ? "cpu" : "grid"}
+        size={14}
+        color={item.tradeColor}
+      />
+    </Pressable>
+  );
+}
 
 // ─── Animated Trade Card ──────────────────────────────────────────────────────
 
@@ -45,7 +121,6 @@ function TradeCard({
 
   useEffect(() => {
     if (editMode && !isActive) {
-      // subtle wiggle — small angle, slow speed, randomised start delay
       const delay = Math.random() * 120;
       const timer = setTimeout(() => {
         rot.value = withRepeat(
@@ -71,7 +146,7 @@ function TradeCard({
   return (
     <Animated.View style={animStyle}>
       <Pressable
-        onPress={editMode ? undefined : () => {}} // swallow tap in edit mode
+        onPress={editMode ? undefined : () => {}}
         onLongPress={onLongPress}
         delayLongPress={400}
         style={[
@@ -87,22 +162,14 @@ function TradeCard({
           },
         ]}
       >
-        {/* Top row: icon + info + drag handle (edit mode) */}
         <View style={styles.cardTop}>
           <View style={[styles.tradeIcon, { backgroundColor: trade.color + "1A" }]}>
-            <Feather
-              name={trade.icon as keyof typeof Feather.glyphMap}
-              size={22}
-              color={trade.color}
-            />
+            <Feather name={trade.icon as keyof typeof Feather.glyphMap} size={22} color={trade.color} />
           </View>
           <View style={styles.tradeInfo}>
-            <Text style={[styles.tradeName, { color: colors.foreground }]}>
-              {trade.name}
-            </Text>
+            <Text style={[styles.tradeName, { color: colors.foreground }]}>{trade.name}</Text>
             <Text style={[styles.tradeMeta, { color: colors.mutedForeground }]}>
-              {trade.calculators.length} calcs
-              {refCount > 0 ? `  ·  ${refCount} refs` : ""}
+              {trade.calculators.length} calcs{refCount > 0 ? `  ·  ${refCount} refs` : ""}
             </Text>
           </View>
           {editMode && drag ? (
@@ -112,11 +179,9 @@ function TradeCard({
           ) : null}
         </View>
 
-        {/* Bottom section — always same height for consistent card size */}
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
         {editMode ? (
-          // Placeholder row — same height as action buttons, keeps card size stable
           <View style={styles.editHint}>
             <Feather name="move" size={13} color={colors.mutedForeground} />
             <Text style={[styles.editHintText, { color: colors.mutedForeground }]}>
@@ -128,45 +193,29 @@ function TradeCard({
             <Pressable
               style={({ pressed }) => [
                 styles.actionBtn,
-                {
-                  backgroundColor: trade.color + "15",
-                  borderColor: trade.color + "35",
-                  opacity: pressed ? 0.65 : 1,
-                },
+                { backgroundColor: trade.color + "15", borderColor: trade.color + "35", opacity: pressed ? 0.65 : 1 },
               ]}
               onPress={() => router.push(`/trade/${trade.id}`)}
             >
               <Feather name="cpu" size={13} color={trade.color} />
-              <Text style={[styles.actionLabel, { color: trade.color }]}>
-                Calculators
-              </Text>
+              <Text style={[styles.actionLabel, { color: trade.color }]}>Calculators</Text>
               <View style={[styles.badge, { backgroundColor: trade.color + "25" }]}>
-                <Text style={[styles.badgeText, { color: trade.color }]}>
-                  {trade.calculators.length}
-                </Text>
+                <Text style={[styles.badgeText, { color: trade.color }]}>{trade.calculators.length}</Text>
               </View>
             </Pressable>
 
             <Pressable
               style={({ pressed }) => [
                 styles.actionBtn,
-                {
-                  backgroundColor: colors.background,
-                  borderColor: colors.border,
-                  opacity: pressed ? 0.65 : 1,
-                },
+                { backgroundColor: colors.background, borderColor: colors.border, opacity: pressed ? 0.65 : 1 },
               ]}
               onPress={() => router.push(`/refs/${trade.id}`)}
             >
               <Feather name="book-open" size={13} color={colors.mutedForeground} />
-              <Text style={[styles.actionLabel, { color: colors.mutedForeground }]}>
-                References
-              </Text>
+              <Text style={[styles.actionLabel, { color: colors.mutedForeground }]}>References</Text>
               {refCount > 0 && (
                 <View style={[styles.badge, { backgroundColor: colors.muted }]}>
-                  <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>
-                    {refCount}
-                  </Text>
+                  <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>{refCount}</Text>
                 </View>
               )}
             </Pressable>
@@ -185,112 +234,129 @@ function Header({
   editMode,
   onDone,
   onReset,
+  onSearch,
 }: {
   editMode: boolean;
   onDone: () => void;
   onReset: () => void;
+  onSearch: () => void;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   return (
-    <>
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: topPad + 16,
-            backgroundColor: colors.background,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
-        <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            Tradesman Toolkit
-          </Text>
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            {editMode ? "Drag to reorder  ·  Done when finished" : "Field Calculators"}
-          </Text>
-        </View>
+    <View
+      style={[
+        styles.header,
+        { paddingTop: topPad + 16, backgroundColor: colors.background, borderBottomColor: colors.border },
+      ]}
+    >
+      <View style={styles.headerLeft}>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Tradesman Toolkit</Text>
+        <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+          {editMode ? "Drag to reorder  ·  Done when finished" : "Field Calculators"}
+        </Text>
+      </View>
 
-        <View style={styles.headerActions}>
-          {editMode ? (
-            <>
-              <Pressable
-                onPress={onReset}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.headerBtnText, { color: colors.mutedForeground }]}>
-                  Reset
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={onDone}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    borderColor: colors.primary,
-                    opacity: pressed ? 0.8 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.headerBtnText, { color: "#fff" }]}>Done</Text>
-              </Pressable>
-            </>
-          ) : (
+      <View style={styles.headerActions}>
+        {editMode ? (
+          <>
+            <Pressable
+              onPress={onReset}
+              style={({ pressed }) => [
+                styles.headerBtn,
+                { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={[styles.headerBtnText, { color: colors.mutedForeground }]}>Reset</Text>
+            </Pressable>
+            <Pressable
+              onPress={onDone}
+              style={({ pressed }) => [
+                styles.headerBtn,
+                { backgroundColor: colors.primary, borderColor: colors.primary, opacity: pressed ? 0.8 : 1 },
+              ]}
+            >
+              <Text style={[styles.headerBtnText, { color: "#fff" }]}>Done</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Pressable
+              onPress={onSearch}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+              ]}
+              hitSlop={8}
+              accessibilityLabel="Search"
+            >
+              <Feather name="search" size={18} color={colors.mutedForeground} />
+            </Pressable>
             <Pressable
               onPress={() => router.push("/settings")}
               style={({ pressed }) => [
                 styles.iconBtn,
-                {
-                  backgroundColor: colors.primary,
-                  borderColor: colors.primary,
-                  opacity: pressed ? 0.8 : 1,
-                },
+                { backgroundColor: colors.primary, borderColor: colors.primary, opacity: pressed ? 0.8 : 1 },
               ]}
               hitSlop={8}
               accessibilityLabel="Settings"
             >
               <Feather name="settings" size={18} color="#fff" />
             </Pressable>
-          )}
-        </View>
+          </>
+        )}
       </View>
-
-      {editMode && (
-        <View
-          style={[
-            styles.editBanner,
-            {
-              backgroundColor: colors.primary + "12",
-              borderBottomColor: colors.primary + "25",
-            },
-          ]}
-        >
-          <Feather name="info" size={12} color={colors.primary} />
-          <Text style={[styles.editBannerText, { color: colors.primary }]}>
-            Long-press any card to start reordering, or grab the ≡ handle
-          </Text>
-        </View>
-      )}
-    </>
+    </View>
   );
 }
 
-// ─── Native draggable list ────────────────────────────────────────────────────
+// ─── Search Bar ───────────────────────────────────────────────────────────────
+
+function SearchBar({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: string;
+  onChange: (t: string) => void;
+  onClose: () => void;
+}) {
+  const colors = useColors();
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 80);
+  }, []);
+
+  return (
+    <View style={[styles.searchBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.searchInput, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Feather name="search" size={16} color={colors.mutedForeground} />
+        <TextInput
+          ref={inputRef}
+          value={value}
+          onChangeText={onChange}
+          placeholder="Search calculators, trades…"
+          placeholderTextColor={colors.mutedForeground}
+          style={[styles.searchText, { color: colors.foreground }]}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          autoCorrect={false}
+        />
+      </View>
+      <Pressable onPress={onClose} style={({ pressed }) => [styles.cancelBtn, { opacity: pressed ? 0.6 : 1 }]}>
+        <Text style={[styles.cancelTxt, { color: colors.primary }]}>Cancel</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// ─── Native List (with drag) ──────────────────────────────────────────────────
 
 function NativeList({
-  trades,
+  trades: tradeList,
   editMode,
   onReorder,
   bottomPad,
@@ -309,59 +375,39 @@ function NativeList({
     Promise.all([
       import("react-native-draggable-flatlist").then((m) => m.default),
       import("react-native-draggable-flatlist").then((m) => m.ScaleDecorator),
-    ]).then(([dfl, sd]) => {
-      setDFL(() => dfl);
-      setSD(() => sd);
-    });
+    ]).then(([dfl, sd]) => { setDFL(() => dfl); setSD(() => sd); });
   }, []);
 
-  // Fall back to regular FlatList while loading or if import fails
   if (!DraggableFlatList || !ScaleDecorator) {
     return (
       <FlatList
-        data={trades}
+        data={tradeList}
         keyExtractor={(t) => t.id}
         contentContainerStyle={{ padding: 14, paddingTop: 12, paddingBottom: bottomPad }}
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        renderItem={({ item }) => (
-          <TradeCard trade={item} editMode={editMode} onLongPress={onEnterEdit} />
-        )}
+        renderItem={({ item }) => <TradeCard trade={item} editMode={editMode} onLongPress={onEnterEdit} />}
       />
     );
   }
 
   return (
     <DraggableFlatList
-      data={trades}
-      onDragEnd={({ data }: { data: Trade[] }) =>
-        onReorder(data.map((t: Trade) => t.id))
-      }
+      data={tradeList}
+      onDragEnd={({ data }: { data: Trade[] }) => onReorder(data.map((t: Trade) => t.id))}
       keyExtractor={(item: Trade) => item.id}
       contentContainerStyle={{ padding: 14, paddingTop: 12, paddingBottom: bottomPad }}
       showsVerticalScrollIndicator={false}
       activationDistance={editMode ? 4 : 9999}
       ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-      renderItem={({
-        item,
-        drag,
-        isActive,
-      }: {
-        item: Trade;
-        drag: () => void;
-        isActive: boolean;
-      }) => (
+      renderItem={({ item, drag, isActive }: { item: Trade; drag: () => void; isActive: boolean }) => (
         <ScaleDecorator activeScale={1.03}>
           <TradeCard
             trade={item}
             drag={drag}
             isActive={isActive}
             editMode={editMode}
-            onLongPress={() => {
-              onEnterEdit();
-              // Small delay so edit mode renders before drag starts
-              setTimeout(drag, 80);
-            }}
+            onLongPress={() => { onEnterEdit(); setTimeout(drag, 80); }}
           />
         </ScaleDecorator>
       )}
@@ -376,48 +422,88 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { orderedTrades, saveOrder, resetOrder } = useTradeOrder();
   const [editMode, setEditMode] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchResults = useSearch(searchQuery);
 
-  // Tab bar is ~49pt + device bottom inset; add extra to guarantee last card visible
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom + 90;
 
   const handleDone = useCallback(() => setEditMode(false), []);
   const handleEnterEdit = useCallback(() => setEditMode(true), []);
-  const handleReset = useCallback(() => {
-    resetOrder();
-    setEditMode(false);
-  }, [resetOrder]);
+  const handleReset = useCallback(() => { resetOrder(); setEditMode(false); }, [resetOrder]);
+  const handleSearch = useCallback(() => setSearching(true), []);
+  const handleCloseSearch = useCallback(() => { setSearching(false); setSearchQuery(""); }, []);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <Header
-        editMode={editMode}
-        onDone={handleDone}
-        onReset={handleReset}
-      />
-
-      {Platform.OS === "web" ? (
-        <FlatList
-          data={orderedTrades}
-          keyExtractor={(t) => t.id}
-          contentContainerStyle={{ padding: 14, paddingTop: 12, paddingBottom: bottomPad }}
-          showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          renderItem={({ item }) => (
-            <TradeCard
-              trade={item}
-              editMode={editMode}
-              onLongPress={handleEnterEdit}
+      {searching ? (
+        <>
+          <SearchBar value={searchQuery} onChange={setSearchQuery} onClose={handleCloseSearch} />
+          {searchQuery.trim().length === 0 ? (
+            <View style={styles.searchEmpty}>
+              <Feather name="search" size={36} color={colors.mutedForeground} style={{ opacity: 0.35 }} />
+              <Text style={[styles.searchEmptyTitle, { color: colors.foreground }]}>Find anything</Text>
+              <Text style={[styles.searchEmptyText, { color: colors.mutedForeground }]}>
+                Search across all {trades.reduce((n, t) => n + t.calculators.length, 0)}+ calculators and 13 trades
+              </Text>
+            </View>
+          ) : searchResults.length === 0 ? (
+            <View style={styles.searchEmpty}>
+              <Feather name="frown" size={32} color={colors.mutedForeground} style={{ opacity: 0.35 }} />
+              <Text style={[styles.searchEmptyTitle, { color: colors.foreground }]}>No results</Text>
+              <Text style={[styles.searchEmptyText, { color: colors.mutedForeground }]}>
+                Try a different term
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(r, i) => `${r.tradeId}-${r.calcId ?? "trade"}-${i}`}
+              contentContainerStyle={{ padding: 14, paddingBottom: bottomPad }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+              ListHeaderComponent={
+                <Text style={[styles.resultCount, { color: colors.mutedForeground }]}>
+                  {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
+                </Text>
+              }
+              renderItem={({ item }) => <SearchResultItem item={item} />}
             />
           )}
-        />
+        </>
       ) : (
-        <NativeList
-          trades={orderedTrades}
-          editMode={editMode}
-          onReorder={saveOrder}
-          bottomPad={bottomPad}
-          onEnterEdit={handleEnterEdit}
-        />
+        <>
+          <Header editMode={editMode} onDone={handleDone} onReset={handleReset} onSearch={handleSearch} />
+
+          {editMode && (
+            <View style={[styles.editBanner, { backgroundColor: colors.primary + "12", borderBottomColor: colors.primary + "25" }]}>
+              <Feather name="info" size={12} color={colors.primary} />
+              <Text style={[styles.editBannerText, { color: colors.primary }]}>
+                Long-press any card to start reordering, or grab the ≡ handle
+              </Text>
+            </View>
+          )}
+
+          {Platform.OS === "web" ? (
+            <FlatList
+              data={orderedTrades}
+              keyExtractor={(t) => t.id}
+              contentContainerStyle={{ padding: 14, paddingTop: 12, paddingBottom: bottomPad }}
+              showsVerticalScrollIndicator={false}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              renderItem={({ item }) => <TradeCard trade={item} editMode={editMode} onLongPress={handleEnterEdit} />}
+            />
+          ) : (
+            <NativeList
+              trades={orderedTrades}
+              editMode={editMode}
+              onReorder={saveOrder}
+              bottomPad={bottomPad}
+              onEnterEdit={handleEnterEdit}
+            />
+          )}
+        </>
       )}
     </View>
   );
@@ -429,12 +515,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
 
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingBottom: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 18, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerLeft: { flex: 1 },
   headerTitle: { fontSize: 26, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
@@ -450,6 +532,33 @@ const styles = StyleSheet.create({
   },
   editBannerText: { fontSize: 12, fontFamily: "Inter_500Medium", flex: 1 },
 
+  // Search
+  searchBar: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 14, paddingVertical: 10, paddingTop: Platform.OS === "web" ? 77 : 60,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  searchInput: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 8,
+    borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9,
+  },
+  searchText: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
+  cancelBtn: { paddingHorizontal: 4 },
+  cancelTxt: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  searchEmpty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
+  searchEmptyTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold", marginTop: 8 },
+  searchEmptyText: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", paddingHorizontal: 40 },
+  resultCount: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  resultRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    borderRadius: 14, borderWidth: 1, padding: 14,
+  },
+  resultDot: { width: 4, height: 32, borderRadius: 2 },
+  resultText: { flex: 1 },
+  resultName: { fontSize: 15, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
+  resultMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
+
+  // Card
   card: { borderRadius: 18, borderWidth: 1, overflow: "hidden" },
   cardTop: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
   tradeIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
@@ -457,25 +566,11 @@ const styles = StyleSheet.create({
   tradeName: { fontSize: 16, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
   tradeMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
   dragHandle: { padding: 6 },
-
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 14 },
-
-  // Edit-mode placeholder — same height as cardActions so card doesn't shrink
-  editHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    padding: 10,
-    minHeight: 47, // matches cardActions row height
-  },
+  editHint: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, padding: 10, minHeight: 47 },
   editHintText: { fontSize: 12, fontFamily: "Inter_400Regular" },
-
   cardActions: { flexDirection: "row", gap: 8, padding: 10 },
-  actionBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 6, borderRadius: 10, borderWidth: 1, paddingVertical: 9, paddingHorizontal: 8,
-  },
+  actionBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 10, borderWidth: 1, paddingVertical: 9, paddingHorizontal: 8 },
   actionLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   badge: { borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, minWidth: 20, alignItems: "center" },
   badgeText: { fontSize: 11, fontFamily: "Inter_700Bold" },

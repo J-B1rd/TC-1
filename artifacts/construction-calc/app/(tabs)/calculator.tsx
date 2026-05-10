@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -65,17 +65,79 @@ const FRACS = [
   { label: "⅞", val: 7/8 }, { label: "¹⁄₁₆", val: 1/16 }, { label: "³⁄₁₆", val: 3/16 },
 ];
 
+// ─── Tape Roll History ────────────────────────────────────────────────────────
+
+function TapeRoll({ history }: { history: HistoryItem[] }) {
+  const colors = useColors();
+  const scrollRef = useRef<ScrollView>(null);
+  const dark = useColorScheme() === "dark";
+
+  const tapeBg = dark ? "#111114" : "#F8F7F4";
+  const lineColor = dark ? "#2A2A2E" : "#E8E5DF";
+  const exprColor = dark ? "#888" : "#888";
+  const resultColor = dark ? "#E8E8E8" : "#111";
+
+  if (history.length === 0) {
+    return (
+      <View style={[styles.tapeEmpty, { backgroundColor: tapeBg }]}>
+        <Text style={[styles.tapeEmptyIcon, { color: exprColor }]}>— — —</Text>
+        <Text style={[styles.tapeEmptyText, { color: exprColor }]}>
+          Calculations will appear here
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.tape, { backgroundColor: tapeBg }]}>
+      {/* Perforated top edge */}
+      <View style={[styles.tapePerf, { borderBottomColor: lineColor }]}>
+        {Array.from({ length: 18 }).map((_, i) => (
+          <View key={i} style={[styles.perfDot, { backgroundColor: dark ? "#222" : "#DDD8CF" }]} />
+        ))}
+      </View>
+
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+        contentContainerStyle={{ paddingBottom: 4, paddingTop: 4 }}
+      >
+        {history.map((h, i) => (
+          <View
+            key={i}
+            style={[
+              styles.tapeLine,
+              i < history.length - 1 && { borderBottomColor: lineColor, borderBottomWidth: StyleSheet.hairlineWidth },
+            ]}
+          >
+            <Text style={[styles.tapeExpr, { color: exprColor }]} numberOfLines={1}>
+              {h.expr}
+            </Text>
+            <Text style={[styles.tapeResult, { color: resultColor }]}>
+              {h.result}
+            </Text>
+          </View>
+        ))}
+        {/* Subtotal arrow indicator */}
+        <View style={[styles.tapeTotal, { borderTopColor: lineColor }]}>
+          <Text style={[styles.tapeTotalLine, { color: lineColor }]}>━━━━━━━━━━━━━━━━━━━━━━</Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── Key Button ───────────────────────────────────────────────────────────────
 
 type BtnVariant = "num" | "op" | "action" | "eq" | "accent";
 
 function Key({
-  label, onPress, variant = "num", wide, accent,
+  label, onPress, variant = "num", accent,
 }: {
   label: string;
   onPress: () => void;
   variant?: BtnVariant;
-  wide?: boolean;
   accent?: string;
 }) {
   const colors = useColors();
@@ -91,35 +153,28 @@ function Key({
   const tc =
     variant === "eq"     ? "#fff" :
     variant === "op"     ? colors.primary :
+    variant === "action" ? colors.mutedForeground :
     variant === "accent" && accent ? accent :
     colors.foreground;
-
-  const border =
-    variant === "eq"     ? "transparent" :
-    variant === "op"     ? (dark ? "#3A3A46" : "#D0D0DC") :
-    variant === "action" ? (dark ? "#3A3A3A" : "#D4D4DC") :
-    colors.border;
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.key,
-        wide && { flex: 2 },
         {
           backgroundColor: bg,
-          borderColor: border,
+          borderColor: dark ? "#2E2E38" : colors.border,
           opacity: pressed ? 0.58 : 1,
-          transform: [{ scale: pressed ? 0.96 : 1 }],
+          transform: [{ scale: pressed ? 0.95 : 1 }],
         },
       ]}
     >
       <Text style={[
         styles.keyTxt,
-        variant === "eq" && { color: "#fff", fontFamily: "Inter_600SemiBold" },
-        variant === "op" && { color: colors.primary, fontSize: 19 },
-        variant === "action" && { color: colors.mutedForeground, fontSize: 15 },
-        variant === "accent" && accent && { color: accent, fontSize: 14 },
+        variant === "op" && { fontSize: 20, fontFamily: "Inter_300Light" },
+        variant === "action" && { fontSize: 16 },
+        variant === "accent" && { fontSize: 14 },
         { color: tc },
       ]}>
         {label}
@@ -163,7 +218,7 @@ function Standard({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
     const cur = parseFloat(display);
     const res = apply(pendingVal, cur, pendingOp);
     const rs = fmt(res);
-    onHistory({ expr: `${expr} ${display} =`, result: rs });
+    onHistory({ expr: `${expr} ${display}`, result: rs });
     setDisplay(rs); setExpr(`${expr} ${display} =`);
     setPendingOp(null); setPendingVal(null); setJustCalc(true);
   };
@@ -173,7 +228,7 @@ function Standard({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
   const pm = () => setDisplay(d => d.startsWith("-")?d.slice(1):"-"+d);
 
   return (
-    <View style={styles.calcBody}>
+    <View style={styles.calcBlock}>
       {/* Display */}
       <View style={[styles.display, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.exprLine, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -183,14 +238,13 @@ function Standard({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
           {display}
         </Text>
       </View>
-
       {/* Keypad */}
       <View style={styles.keypad}>
         <View style={styles.keyRow}>
-          <Key label="C"   onPress={clear} variant="action" />
-          <Key label="+/−" onPress={pm}    variant="action" />
-          <Key label="%"   onPress={pct}   variant="action" />
-          <Key label="÷"   onPress={() => handleOp("÷")} variant="op" />
+          <Key label="C" onPress={clear} variant="action" />
+          <Key label="+/−" onPress={pm} variant="action" />
+          <Key label="%" onPress={pct} variant="action" />
+          <Key label="÷" onPress={() => handleOp("÷")} variant="op" />
         </View>
         <View style={styles.keyRow}>
           <Key label="7" onPress={() => digit("7")} />
@@ -275,7 +329,7 @@ function Construction({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
     if (!pendingOp || pendingIn===null) return;
     const cur = entryInches;
     const res = applyOp(pendingIn, cur, pendingOp);
-    onHistory({ expr: `${expr} ${inchesToFtIn(cur)} =`, result: inchesToFtIn(res) });
+    onHistory({ expr: `${expr} ${inchesToFtIn(cur)}`, result: inchesToFtIn(res) });
     setResultIn(res); setExpr(`${expr} ${inchesToFtIn(cur)} =`);
     setPendingOp(null); setPendingIn(null); setJustCalc(true); setEntry(empty());
   };
@@ -289,8 +343,8 @@ function Construction({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
   };
 
   return (
-    <View style={styles.calcBody}>
-      {/* Display — with ft/in toggle integrated */}
+    <View style={styles.calcBlock}>
+      {/* Display with ft/in toggle */}
       <View style={[styles.display, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.exprLine, { color: colors.mutedForeground }]} numberOfLines={1}>
           {expr || " "}
@@ -298,19 +352,15 @@ function Construction({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
         <Text style={[styles.mainNum, { color: colors.foreground }]} adjustsFontSizeToFit numberOfLines={1}>
           {displayStr}
         </Text>
-        {/* ft / in chips — inside the display card */}
         <View style={styles.fieldRow}>
           {(["feet","inches"] as const).map(f => (
             <Pressable
               key={f}
               onPress={() => { setActive(f); if (justCalc) { setResultIn(null); setJustCalc(false); } }}
-              style={[
-                styles.fieldChip,
-                {
-                  backgroundColor: active===f ? orange+"1A" : "transparent",
-                  borderColor: active===f ? orange+"60" : colors.border,
-                },
-              ]}
+              style={[styles.fieldChip, {
+                backgroundColor: active===f ? orange+"1A" : "transparent",
+                borderColor: active===f ? orange+"60" : colors.border,
+              }]}
             >
               <Text style={[styles.fieldChipTxt, { color: active===f ? orange : colors.mutedForeground }]}>
                 {f==="feet" ? "ft" : "in"}
@@ -320,53 +370,35 @@ function Construction({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
         </View>
       </View>
 
-      {/* Fraction chips — horizontal scroll */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.fracScroll}
-        contentContainerStyle={styles.fracContent}
-      >
+      {/* Fraction chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fracScroll} contentContainerStyle={styles.fracContent}>
         {FRACS.map(f => (
-          <Pressable
-            key={f.label}
-            onPress={() => frac(f.val, f.label)}
-            style={[
-              styles.fracChip,
-              {
-                backgroundColor: entry.fracLabel===f.label ? orange+"18" : colors.card,
-                borderColor: entry.fracLabel===f.label ? orange+"55" : colors.border,
-              },
-            ]}
+          <Pressable key={f.label} onPress={() => frac(f.val, f.label)}
+            style={[styles.fracChip, {
+              backgroundColor: entry.fracLabel===f.label ? orange+"18" : colors.card,
+              borderColor: entry.fracLabel===f.label ? orange+"55" : colors.border,
+            }]}
           >
-            <Text style={[styles.fracChipTxt, { color: entry.fracLabel===f.label ? orange : colors.mutedForeground }]}>
-              {f.label}
-            </Text>
+            <Text style={[styles.fracChipTxt, { color: entry.fracLabel===f.label ? orange : colors.mutedForeground }]}>{f.label}</Text>
           </Pressable>
         ))}
-        <Pressable
-          onPress={() => frac(0,"")}
-          style={[
-            styles.fracChip,
-            {
-              backgroundColor: entry.frac===0&&entry.fracLabel==="" ? orange+"18" : colors.card,
-              borderColor: entry.frac===0&&entry.fracLabel==="" ? orange+"55" : colors.border,
-            },
-          ]}
+        <Pressable onPress={() => frac(0,"")}
+          style={[styles.fracChip, {
+            backgroundColor: entry.frac===0&&entry.fracLabel==="" ? orange+"18" : colors.card,
+            borderColor: entry.frac===0&&entry.fracLabel==="" ? orange+"55" : colors.border,
+          }]}
         >
-          <Text style={[styles.fracChipTxt, { color: entry.frac===0&&entry.fracLabel==="" ? orange : colors.mutedForeground }]}>
-            0
-          </Text>
+          <Text style={[styles.fracChipTxt, { color: entry.frac===0&&entry.fracLabel==="" ? orange : colors.mutedForeground }]}>0</Text>
         </Pressable>
       </ScrollView>
 
       {/* Keypad */}
       <View style={styles.keypad}>
         <View style={styles.keyRow}>
-          <Key label="C"      onPress={clear}  variant="action" />
-          <Key label="⌫"      onPress={back}   variant="action" />
-          <Key label="dec"    onPress={decFt}  variant="action" />
-          <Key label="÷"      onPress={() => doOp("÷")} variant="op" />
+          <Key label="C" onPress={clear} variant="action" />
+          <Key label="⌫" onPress={back} variant="action" />
+          <Key label="dec" onPress={decFt} variant="action" />
+          <Key label="÷" onPress={() => doOp("÷")} variant="op" />
         </View>
         <View style={styles.keyRow}>
           <Key label="7" onPress={() => digit("7")} />
@@ -395,9 +427,9 @@ function Construction({ onHistory }: { onHistory: (h: HistoryItem) => void }) {
               setEntry(empty()); setPendingOp(null); setPendingIn(null);
             }
           }} variant="accent" accent={orange} />
-          <Key label="0"  onPress={() => digit("0")} />
+          <Key label="0" onPress={() => digit("0")} />
           <Key label="00" onPress={() => { digit("0"); digit("0"); }} />
-          <Key label="="  onPress={equals} variant="eq" />
+          <Key label="=" onPress={equals} variant="eq" />
         </View>
       </View>
     </View>
@@ -419,29 +451,17 @@ export default function CalculatorScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      {/* ── Header ── */}
+      {/* Header */}
       <View style={[styles.header, { paddingTop: topPad, borderBottomColor: colors.border }]}>
-        <View>
-          <Text style={[styles.title, { color: colors.foreground }]}>Calculator</Text>
-        </View>
-        {/* Mode pills */}
+        <Text style={[styles.title, { color: colors.foreground }]}>Calculator</Text>
         <View style={[styles.modePills, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {(["standard","construction"] as Mode[]).map(m => {
             const active = mode === m;
             return (
-              <Pressable
-                key={m}
-                onPress={() => setMode(m)}
-                style={[
-                  styles.modePill,
-                  active && { backgroundColor: colors.primary },
-                ]}
+              <Pressable key={m} onPress={() => setMode(m)}
+                style={[styles.modePill, active && { backgroundColor: colors.primary }]}
               >
-                <Feather
-                  name={m==="standard" ? "hash" : "tool"}
-                  size={11}
-                  color={active ? "#fff" : colors.mutedForeground}
-                />
+                <Feather name={m==="standard" ? "hash" : "tool"} size={11} color={active ? "#fff" : colors.mutedForeground} />
                 <Text style={[styles.modePillTxt, { color: active ? "#fff" : colors.mutedForeground }]}>
                   {m==="standard" ? "Standard" : "Ft & In"}
                 </Text>
@@ -451,23 +471,15 @@ export default function CalculatorScreen() {
         </View>
       </View>
 
-      {/* ── Last history strip ── */}
-      {history.length > 0 && (
-        <View style={[styles.historyStrip, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <Text style={[styles.historyExpr, { color: colors.mutedForeground }]} numberOfLines={1}>
-            {history[history.length-1].expr}
-          </Text>
-          <Text style={[styles.historyVal, { color: colors.foreground }]}>
-            = {history[history.length-1].result}
-          </Text>
-        </View>
-      )}
-
-      {/* ── Calculator body ── */}
+      {/* Body: tape roll (flex:1) + calculator (fixed) */}
       <View style={[styles.body, { paddingBottom: bottomPad }]}>
+        {/* Tape roll fills the void above the display */}
+        <TapeRoll history={history} />
+
+        {/* Calculator — display + keypad */}
         {mode === "standard"
-          ? <Standard onHistory={h => setStdHistory(p => [...p.slice(-9), h])} />
-          : <Construction onHistory={h => setConHistory(p => [...p.slice(-9), h])} />
+          ? <Standard onHistory={h => setStdHistory(p => [...p.slice(-19), h])} />
+          : <Construction onHistory={h => setConHistory(p => [...p.slice(-19), h])} />
         }
       </View>
     </View>
@@ -482,108 +494,56 @@ const KEY_H = 62;
 const styles = StyleSheet.create({
   screen: { flex: 1 },
 
-  // Header
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth,
   },
   title: { fontSize: 20, fontFamily: "Inter_700Bold", letterSpacing: -0.4 },
-
-  // Mode toggle
-  modePills: {
-    flexDirection: "row",
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 3,
-    gap: 3,
-  },
-  modePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    borderRadius: 7,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
+  modePills: { flexDirection: "row", borderRadius: 10, borderWidth: 1, padding: 3, gap: 3 },
+  modePill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 7, paddingHorizontal: 10, paddingVertical: 5 },
   modePillTxt: { fontSize: 12, fontFamily: "Inter_500Medium" },
 
-  // History strip
-  historyStrip: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-  },
-  historyExpr: { flex: 1, fontSize: 11, fontFamily: "Inter_400Regular" },
-  historyVal: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  // Body — tape roll grows, calc block stays fixed at bottom
+  body: { flex: 1, paddingHorizontal: 10, paddingTop: 6, gap: GAP },
 
-  // Body — justifyContent:'flex-end' anchors keypad to bottom, empty space collects above display
-  body: { flex: 1, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 0, justifyContent: "flex-end", gap: GAP },
-  calcBody: { gap: GAP },
+  // Tape roll
+  tape: { flex: 1, borderRadius: 12, overflow: "hidden", minHeight: 60 },
+  tapeEmpty: { flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 6, minHeight: 60 },
+  tapeEmptyIcon: { fontSize: 18, letterSpacing: 6, opacity: 0.4 },
+  tapeEmptyText: { fontSize: 12, fontFamily: "Inter_400Regular", opacity: 0.5 },
+  tapePerf: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 6, paddingVertical: 5, borderBottomWidth: 1 },
+  perfDot: { width: 6, height: 6, borderRadius: 3 },
+  tapeLine: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 12, paddingVertical: 6 },
+  tapeExpr: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", paddingRight: 8 },
+  tapeResult: { fontSize: 15, fontFamily: "Inter_600SemiBold", textAlign: "right" },
+  tapeTotal: { paddingHorizontal: 12, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth },
+  tapeTotalLine: { fontSize: 10, letterSpacing: 0.5, opacity: 0.4 },
+
+  // Calc block (display + keypad, no flex — content-sized)
+  calcBlock: { gap: GAP },
 
   // Display card
   display: {
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 10,
+    borderRadius: 14, borderWidth: 1,
+    paddingHorizontal: 14, paddingTop: 8, paddingBottom: 10,
   },
   exprLine: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "right", marginBottom: 1 },
-  mainNum: {
-    fontSize: 40,
-    fontFamily: "Inter_700Bold",
-    textAlign: "right",
-    letterSpacing: -1.5,
-    minHeight: 48,
-  },
+  mainNum: { fontSize: 40, fontFamily: "Inter_700Bold", textAlign: "right", letterSpacing: -1.5, minHeight: 48 },
 
   // ft/in chips inside display
   fieldRow: { flexDirection: "row", gap: 6, marginTop: 8 },
-  fieldChip: {
-    borderRadius: 7,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    alignItems: "center",
-  },
+  fieldChip: { borderRadius: 7, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4, alignItems: "center" },
   fieldChipTxt: { fontSize: 12, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5 },
 
   // Fraction scroll
   fracScroll: { flexGrow: 0 },
-  fracContent: { gap: 6, paddingHorizontal: 0 },
-  fracChip: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    alignItems: "center",
-    minWidth: 38,
-  },
+  fracContent: { gap: 6 },
+  fracChip: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, alignItems: "center", minWidth: 38 },
   fracChipTxt: { fontSize: 14, fontFamily: "Inter_400Regular" },
 
-  // Keypad — fixed-height rows, no flex needed on the container
+  // Keypad
   keypad: { gap: GAP },
   keyRow: { height: KEY_H, flexDirection: "row", gap: GAP },
-
-  // Key
-  key: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  keyTxt: {
-    fontSize: 21,
-    fontFamily: "Inter_400Regular",
-    includeFontPadding: false,
-  },
+  key: { flex: 1, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: "center", justifyContent: "center" },
+  keyTxt: { fontSize: 21, fontFamily: "Inter_400Regular" },
 });
