@@ -20,11 +20,13 @@ function SettingRow({
   label,
   value,
   accent,
+  label2,
 }: {
   icon: string;
   label: string;
   value?: string;
   accent?: string;
+  label2?: string;
 }) {
   const colors = useColors();
   return (
@@ -41,10 +43,17 @@ function SettingRow({
           color={accent ?? colors.primary}
         />
       </View>
-      <Text style={[styles.rowLabel, { color: colors.foreground }]}>
-        {label}
-      </Text>
-      {value ? (
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowLabel, { color: colors.foreground }]}>
+          {label}
+        </Text>
+        {label2 ? (
+          <Text style={[styles.rowValue, { color: colors.mutedForeground, textAlign: "left", marginTop: 2 }]}>
+            {label2}
+          </Text>
+        ) : null}
+      </View>
+      {value && !label2 ? (
         <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>
           {value}
         </Text>

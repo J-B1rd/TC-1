@@ -18,18 +18,19 @@ export const gasPipeSizing: Calculator = {
     {
       id: "pressure", label: "Supply Pressure", unit: "", type: "select",
       options: [
-        { label: "Low Pressure (< 2 PSI)", value: "low" },
-        { label: "Medium (2–5 PSI)", value: "med" },
-        { label: "High (> 5 PSI)", value: "high" },
+        { label: "Low (< 2 PSI) — residential", value: "low" },
+        { label: "Medium (2–5 PSI) — commercial", value: "med" },
+        { label: "High (> 5 PSI) — industrial", value: "high" },
       ],
       defaultValue: "low",
     },
   ],
   calculate: (inputs) => {
-    const btu = parseFloat(inputs.btu) || 0;
-    const length = parseFloat(inputs.length) || 0;
+    const btu = Math.max(parseFloat(inputs.btu) || 0, 0);
+    const length = Math.max(parseFloat(inputs.length) || 0, 0);
     const heatVal = parseFloat(inputs.gas) || 1000;
     const cfh = btu / heatVal;
+    const pressureFactor = inputs.pressure === "med" ? 1.5 : inputs.pressure === "high" ? 2.5 : 1.0;
     const cfhCapacity: [string, number][] = [
       ["1/2\" CSST / SCH 40", 40],
       ["3/4\" CSST / SCH 40", 90],
@@ -43,12 +44,13 @@ export const gasPipeSizing: Calculator = {
     const lengthFactor = Math.sqrt(50 / Math.max(length, 1));
     let selectedSize = cfhCapacity[cfhCapacity.length - 1][0];
     for (const [size, cap] of cfhCapacity) {
-      if (cap * lengthFactor >= cfh) { selectedSize = size; break; }
+      if (cap * lengthFactor * pressureFactor >= cfh) { selectedSize = size; break; }
     }
     return [
       { label: "Recommended Pipe", value: 0, unit: selectedSize, highlight: true },
       { label: "Flow Rate Required", value: Math.round(cfh * 10) / 10, unit: "CFH" },
       { label: "Total BTU/hr", value: Math.round(btu), unit: "BTU/hr" },
+      { label: "Pressure Boost Factor", value: pressureFactor, unit: "×" },
     ];
   },
 };

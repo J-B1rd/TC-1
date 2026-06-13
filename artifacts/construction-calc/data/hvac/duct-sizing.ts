@@ -15,20 +15,27 @@ export const ductSizing: Calculator = {
       ],
       defaultValue: "round",
     },
-    { id: "height", label: "Rect Height (if applicable)", unit: "in", type: "number", defaultValue: "10", min: 0 },
+    { id: "height", label: "Rect Height (if applicable)", unit: "in", type: "number", defaultValue: "10", min: 1 },
   ],
   calculate: (inputs) => {
-    const cfm = parseFloat(inputs.cfm) || 0;
-    const velocity = parseFloat(inputs.velocity) || 800;
-    const area = cfm / velocity;
-    const areaSqIn = area * 144;
-    const diam = Math.sqrt(areaSqIn / Math.PI) * 2;
-    const h = parseFloat(inputs.height) || 10;
+    const cfm = Math.max(parseFloat(inputs.cfm) || 0, 0);
+    const velocity = Math.max(parseFloat(inputs.velocity) || 800, 1);
+    const h = Math.max(parseFloat(inputs.height) || 10, 1);
+    if (cfm === 0) {
+      return [
+        { label: "Airflow Required", value: 0, unit: "CFM — enter a value above 0", highlight: true },
+      ];
+    }
+    const areaSqFt = cfm / velocity;
+    const areaSqIn = areaSqFt * 144;
+    const diam = Math.sqrt((4 * areaSqIn) / Math.PI);
     const rectWidth = areaSqIn / h;
+    const displayVal = inputs.type === "round" ? diam : rectWidth;
     return [
-      { label: inputs.type === "round" ? "Round Diameter" : "Rect Width", value: Math.round((inputs.type === "round" ? diam : rectWidth) * 10) / 10, unit: "in", highlight: true },
+      { label: inputs.type === "round" ? "Round Diameter" : "Rect Width", value: Math.round(displayVal * 10) / 10, unit: "in", highlight: true },
       { label: "Duct Area", value: Math.round(areaSqIn * 10) / 10, unit: "in²" },
       { label: "Velocity", value: velocity, unit: "FPM" },
+      { label: "Equiv. Round Diam.", value: Math.round(diam * 10) / 10, unit: "in" },
     ];
   },
 };
