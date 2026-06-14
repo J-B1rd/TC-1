@@ -1,21 +1,51 @@
 import type { Calculator } from "../types";
 
 const COMMON_BOXES: { label: string; volume: number }[] = [
-  { label: '2x4 device box (single-gang, 12.5 in\u00B3)',   volume: 12.5  },
-  { label: '2x4 device box (single-gang, 18 in\u00B3)',     volume: 18.0  },
-  { label: '4" sq. 1-1/4" deep (21 in\u00B3)',              volume: 21.0  },
-  { label: '4" sq. 1-1/2" deep (29.5 in\u00B3)',            volume: 29.5  },
-  { label: '4" sq. 2-1/8" deep (42 in\u00B3)',              volume: 42.0  },
-  { label: '4-11/16" sq. 2-1/8" deep (60.75 in\u00B3)',    volume: 60.75 },
+  { label: 'Single-gang device box, 12.5 in\u00B3',      volume: 12.5  },
+  { label: 'Single-gang device box, 18 in\u00B3',        volume: 18.0  },
+  { label: '4" sq. 1-1/4" deep, 21 in\u00B3',           volume: 21.0  },
+  { label: '4" sq. 1-1/2" deep, 29.5 in\u00B3',         volume: 29.5  },
+  { label: '4" sq. 2-1/8" deep, 42 in\u00B3',           volume: 42.0  },
+  { label: '4-11/16" sq. 2-1/8" deep, 60.75 in\u00B3',  volume: 60.75 },
 ];
 
 export const boxFill: Calculator = {
   id: "box-fill",
   name: "Box Fill (NEC 314.16)",
   description:
-    "Per NEC 314.16(B): each current-carrying conductor = 1 allowance; " +
-    "all ground conductors together = 1 allowance; all internal clamps together = 1 allowance; " +
-    "each device (switch/outlet) = 2 allowances. Volume per allowance = gauge of largest conductor.",
+    "Required box volume from conductor, device, clamp, and ground counts. " +
+    "All volume allowances are based on the largest conductor gauge.",
+  category: "NEC Compliance",
+  difficulty: "basic",
+  formula: "Total = (conductors + devices\u00D72 + clamp-group + ground-group) \u00D7 vol-per-allowance",
+  calculationSteps: [
+    "1. Each current-carrying conductor entering the box = 1 allowance",
+    "2. All ground conductors together (regardless of count) = 1 allowance total",
+    "3. All internal cable clamps together (regardless of count) = 1 allowance total",
+    "4. Each device (switch, outlet, GFCI, dimmer) = 2 allowances",
+    "5. Multiply total allowances by volume-per-allowance from NEC Table 314.16(B)",
+    "6. Compare calculated volume to the cubic-inch rating stamped inside the box",
+  ],
+  warnings: [
+    "Do NOT count equipment grounding conductors individually \u2014 all grounds = 1 allowance",
+    "Do NOT count luminaire fixture wires that originate and stay entirely within the box",
+    "The box volume is stamped on the inside \u2014 never assume; always verify",
+    "Oversized fill risks insulation damage, arcing, and failed inspection",
+    "Combination devices (e.g. GFCI/switch combos) still count as 2 allowances",
+  ],
+  references: [
+    "NEC 314.16 \u2014 outlet, device, and junction box fill",
+    "NEC Table 314.16(B) \u2014 volume allowances per conductor gauge",
+    "NEC 314.16(B)(4) \u2014 device fill allowance (2\u00D7 largest conductor volume)",
+    "NEC 314.16(B)(2) \u2014 clamp allowance",
+    "NEC 314.16(B)(3) \u2014 support fittings allowance",
+  ],
+  tips: [
+    "When close to the limit, switch to a 4\" sq. box with mud ring \u2014 far more volume at little extra cost",
+    "4\" sq. 2-1/8\" deep boxes (42\u202Fin\u00B3) handle most 2-device installs with 12 AWG comfortably",
+    "Old work boxes often have lower cubic-inch ratings than new work boxes of the same size \u2014 always check",
+    "Adding a box extender is allowed by NEC and can save a call-back",
+  ],
   inputs: [
     {
       id: "awg", label: "Largest Wire Gauge", unit: "", type: "select",
@@ -28,26 +58,26 @@ export const boxFill: Calculator = {
       ],
       defaultValue: "2.25",
     },
-    { id: "conductors", label: "Current-Carrying Conductors",    unit: "ea", type: "number", defaultValue: "4", min: 0 },
-    { id: "grounds",    label: "Ground Wires",                   unit: "ea", type: "number", defaultValue: "2", min: 0 },
-    { id: "clamps",     label: "Internal Cable Clamps (if any)", unit: "ea", type: "number", defaultValue: "1", min: 0 },
-    { id: "devices",    label: "Devices (switches / outlets)",   unit: "ea", type: "number", defaultValue: "1", min: 0 },
+    { id: "conductors", label: "Current-Carrying Conductors",    unit: "ea", type: "number", defaultValue: "4", min: 0, max: 100, integer: true },
+    { id: "grounds",    label: "Ground Wires",                   unit: "ea", type: "number", defaultValue: "2", min: 0, max: 100, integer: true },
+    { id: "clamps",     label: "Internal Cable Clamps (if any)", unit: "ea", type: "number", defaultValue: "1", min: 0, max: 20,  integer: true },
+    { id: "devices",    label: "Devices (switches / outlets)",   unit: "ea", type: "number", defaultValue: "1", min: 0, max: 20,  integer: true },
   ],
   calculate: (inputs) => {
-    const vol        = parseFloat(inputs.awg)        || 2.25;
-    const cond       = Math.max(parseFloat(inputs.conductors) || 0, 0);
-    const grounds    = Math.max(parseFloat(inputs.grounds)    || 0, 0);
-    const clamps     = Math.max(parseFloat(inputs.clamps)     || 0, 0);
-    const devices    = Math.max(parseFloat(inputs.devices)    || 0, 0);
+    const vol      = parseFloat(inputs.awg)          || 2.25;
+    const cond     = Math.max(parseFloat(inputs.conductors) || 0, 0);
+    const grounds  = Math.max(parseFloat(inputs.grounds)    || 0, 0);
+    const clamps   = Math.max(parseFloat(inputs.clamps)     || 0, 0);
+    const devices  = Math.max(parseFloat(inputs.devices)    || 0, 0);
 
-    const groundAllowance = grounds > 0 ? 1 : 0;
-    const clampAllowance  = clamps  > 0 ? 1 : 0;
+    const groundGroup = grounds > 0 ? 1 : 0;
+    const clampGroup  = clamps  > 0 ? 1 : 0;
 
-    const condVol    = cond            * vol;
-    const deviceVol  = (devices * 2)   * vol;
-    const clampVol   = clampAllowance  * vol;
-    const groundVol  = groundAllowance * vol;
-    const total      = condVol + deviceVol + clampVol + groundVol;
+    const condVol   = cond           * vol;
+    const deviceVol = (devices * 2)  * vol;
+    const clampVol  = clampGroup     * vol;
+    const groundVol = groundGroup    * vol;
+    const total     = condVol + deviceVol + clampVol + groundVol;
 
     const fit = COMMON_BOXES.find((b) => b.volume >= total);
     const boxLabel = fit
@@ -58,12 +88,14 @@ export const boxFill: Calculator = {
       : inputs.awg === "2.50" ? "10 AWG" : inputs.awg === "3.00" ? "8 AWG" : "6 AWG";
 
     return [
-      { label: "Min Box Volume Required",  value: Math.round(total * 100) / 100, unit: "in\u00B3", highlight: true },
-      { label: "Smallest Box That Fits",   value: 0,    unit: boxLabel },
-      { label: `Conductors (${cond} \u00D7 1 allow.)`, value: Math.round(condVol * 100) / 100, unit: `in\u00B3  (${awgLabel}, ${vol} in\u00B3 ea)` },
-      { label: `Devices (${devices} \u00D7 2 allow.)`,  value: Math.round(deviceVol * 100) / 100, unit: "in\u00B3" },
-      { label: "Grounds (all = 1 allow.)",  value: groundAllowance > 0 ? Math.round(groundVol * 100) / 100 : 0, unit: groundAllowance > 0 ? `in\u00B3  (${grounds} wires = 1 allowance)` : "0  (no grounds)" },
-      { label: "Clamps (all = 1 allow.)",   value: clampAllowance > 0 ? Math.round(clampVol * 100) / 100 : 0, unit: clampAllowance > 0 ? `in\u00B3  (${clamps} clamps = 1 allowance)` : "0  (no clamps)" },
+      { label: "Min Box Volume Required", value: Math.round(total * 100) / 100, unit: "in\u00B3", highlight: true },
+      { label: "Smallest Box That Fits",  value: 0, unit: boxLabel },
+      { label: `Conductors (${cond} \u00D7 1)`,     value: Math.round(condVol * 100) / 100,   unit: `in\u00B3  (${awgLabel}, ${vol}\u202Fin\u00B3 each)` },
+      { label: `Devices (${devices} \u00D7 2)`,     value: Math.round(deviceVol * 100) / 100, unit: "in\u00B3" },
+      { label: "Grounds (group of 1)",    value: groundGroup > 0 ? Math.round(groundVol * 100) / 100 : 0,
+        unit: groundGroup > 0 ? `in\u00B3 (${grounds} wires \u2192 1 allowance)` : "(no grounds)" },
+      { label: "Clamps (group of 1)",     value: clampGroup > 0 ? Math.round(clampVol * 100) / 100 : 0,
+        unit: clampGroup > 0 ? `in\u00B3 (${clamps} clamps \u2192 1 allowance)` : "(no clamps)" },
     ];
   },
 };

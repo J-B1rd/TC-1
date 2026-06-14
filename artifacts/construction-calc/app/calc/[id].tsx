@@ -22,11 +22,26 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { CalculatorInput, CalculatorResult } from "@/data/calculators";
+import type { CalculatorInput, CalculatorResult, Difficulty } from "@/data/calculators";
 import { getCalculatorById, getTradeById } from "@/data/calculators";
+import { validateInputs, preProcessValues } from "@/data/validation";
 import { useColors } from "@/hooks/useColors";
 
-// ─── Input field with inline unit ───────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatVal(value: number): string {
+  if (!isFinite(value) || isNaN(value)) return "—";
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+const DIFFICULTY_COLOR: Record<Difficulty, string> = {
+  basic:        "#10B981",
+  intermediate: "#F59E0B",
+  advanced:     "#EF4444",
+};
+
+// ─── Number field ─────────────────────────────────────────────────────────────
 
 function NumberField({
   input,
@@ -36,6 +51,7 @@ function NumberField({
   onSubmit,
   tradeColor,
   autoFocus,
+  error,
 }: {
   input: CalculatorInput;
   value: string;
@@ -44,23 +60,21 @@ function NumberField({
   onSubmit?: () => void;
   tradeColor: string;
   autoFocus?: boolean;
+  error?: string;
 }) {
   const colors = useColors();
   const [focused, setFocused] = useState(false);
+  const borderColor = error ? "#EF4444" : focused ? tradeColor : colors.border;
 
   return (
     <View style={styles.fieldWrap}>
       <Text style={[styles.fieldLabel, { color: colors.foreground }]}>
         {input.label}
       </Text>
-
       <View
         style={[
           styles.fieldInputRow,
-          {
-            backgroundColor: colors.input,
-            borderColor: focused ? tradeColor : colors.border,
-          },
+          { backgroundColor: colors.input, borderColor },
         ]}
       >
         <TextInput
@@ -85,14 +99,23 @@ function NumberField({
               { borderLeftColor: focused ? tradeColor + "40" : colors.border },
             ]}
           >
-            <Text style={[styles.fieldUnitText, { color: focused ? tradeColor : colors.mutedForeground }]}>
+            <Text
+              style={[
+                styles.fieldUnitText,
+                { color: focused ? tradeColor : colors.mutedForeground },
+              ]}
+            >
               {input.unit}
             </Text>
           </View>
         ) : null}
       </View>
-
-      {input.hint ? (
+      {error ? (
+        <View style={styles.errorRow}>
+          <Feather name="alert-circle" size={11} color="#EF4444" />
+          <Text style={styles.fieldError}>{error}</Text>
+        </View>
+      ) : input.hint ? (
         <Text style={[styles.fieldHint, { color: colors.mutedForeground }]}>
           {input.hint}
         </Text>
@@ -101,7 +124,7 @@ function NumberField({
   );
 }
 
-// ─── Select input ────────────────────────────────────────────────────────────
+// ─── Select field ─────────────────────────────────────────────────────────────
 
 function SelectField({
   input,
@@ -160,15 +183,132 @@ function SelectField({
   );
 }
 
-// ─── Result value formatter ──────────────────────────────────────────────────
+// ─── Collapsible info card ────────────────────────────────────────────────────
 
-function formatVal(value: number): string {
-  if (!isFinite(value) || isNaN(value)) return "—";
-  if (Number.isInteger(value)) return value.toLocaleString();
-  return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+function InfoCard({
+  icon,
+  title,
+  items,
+  color,
+  startOpen = false,
+  mono = false,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  title: string;
+  items: string[];
+  color: string;
+  startOpen?: boolean;
+  mono?: boolean;
+}) {
+  const [open, setOpen] = useState(startOpen);
+  const colors = useColors();
+
+  return (
+    <View style={[styles.infoCard, { borderColor: color + "35" }]}>
+      <Pressable
+        style={[styles.infoCardHeader, { backgroundColor: color + "15" }]}
+        onPress={() => {
+          Haptics.selectionAsync();
+          setOpen((o) => !o);
+        }}
+        hitSlop={4}
+      >
+        <Feather name={icon} size={13} color={color} />
+        <Text style={[styles.infoCardTitle, { color }]}>{title}</Text>
+        <View style={{ flex: 1 }} />
+        <Feather
+          name={open ? "chevron-up" : "chevron-down"}
+          size={13}
+          color={color}
+        />
+      </Pressable>
+      {open && (
+        <View style={[styles.infoCardBody, { borderTopColor: color + "25" }]}>
+          {items.map((item, i) => (
+            <View key={i} style={styles.infoCardRow}>
+              <Text style={[styles.infoCardBullet, { color }]}>
+                {mono ? "" : "•"}
+              </Text>
+              <Text
+                style={[
+                  mono ? styles.infoCardMono : styles.infoCardItem,
+                  { color: colors.foreground },
+                ]}
+              >
+                {item}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+// ─── Formula box ─────────────────────────────────────────────────────────────
+
+function FormulaCard({
+  formula,
+  steps,
+  color,
+}: {
+  formula?: string;
+  steps?: string[];
+  color: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const colors = useColors();
+  if (!formula && (!steps || steps.length === 0)) return null;
+
+  return (
+    <View style={[styles.infoCard, { borderColor: color + "35" }]}>
+      <Pressable
+        style={[styles.infoCardHeader, { backgroundColor: color + "12" }]}
+        onPress={() => {
+          Haptics.selectionAsync();
+          setOpen((o) => !o);
+        }}
+        hitSlop={4}
+      >
+        <Feather name="code" size={13} color={color} />
+        <Text style={[styles.infoCardTitle, { color }]}>
+          How It&apos;s Calculated
+        </Text>
+        <View style={{ flex: 1 }} />
+        <Feather
+          name={open ? "chevron-up" : "chevron-down"}
+          size={13}
+          color={color}
+        />
+      </Pressable>
+      {open && (
+        <View style={[styles.infoCardBody, { borderTopColor: color + "25" }]}>
+          {formula ? (
+            <View
+              style={[
+                styles.formulaBox,
+                { backgroundColor: color + "10", borderColor: color + "30" },
+              ]}
+            >
+              <Text style={[styles.formulaText, { color: colors.foreground }]}>
+                {formula}
+              </Text>
+            </View>
+          ) : null}
+          {steps?.map((step, i) => (
+            <View key={i} style={styles.infoCardRow}>
+              <Text style={[styles.infoCardItem, { color: colors.foreground }]}>
+                {step}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function CalcScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -178,34 +318,41 @@ export default function CalcScreen() {
 
   const [tradeId, calcId] = (id ?? "").split("--");
   const trade = getTradeById(tradeId);
-  const calc = getCalculatorById(tradeId, calcId);
+  const calc  = getCalculatorById(tradeId, calcId);
 
   const tradeColor = trade?.color ?? "#FF6B00";
 
   const defaultValues = useMemo(() => {
     const init: Record<string, string> = {};
-    calc?.inputs.forEach((inp) => {
-      init[inp.id] = inp.defaultValue ?? "";
-    });
+    calc?.inputs.forEach((inp) => { init[inp.id] = inp.defaultValue ?? ""; });
     return init;
   }, [calc]);
 
   const [values, setValues] = useState<Record<string, string>>(defaultValues);
   const [copied, setCopied] = useState(false);
 
-  // Refs for auto-focus chaining
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
+  // Fraction-aware pre-processing: "3/4" → "0.75" before passing to calculate()
+  const processedValues = useMemo(() => preProcessValues(values), [values]);
+
+  // Validation errors (keyed by input id)
+  const validationErrors = useMemo(
+    () => validateInputs(calc?.inputs ?? [], values),
+    [calc, values],
+  );
+  const hasErrors = Object.keys(validationErrors).length > 0;
+
   const results: CalculatorResult[] = useMemo(() => {
-    if (!calc) return [];
+    if (!calc || hasErrors) return [];
     try {
-      return calc.calculate(values);
+      return calc.calculate(processedValues);
     } catch {
       return [];
     }
-  }, [calc, values]);
+  }, [calc, processedValues, hasErrors]);
 
-  const primaryResult = results.find((r) => r.highlight) ?? results[0];
+  const primaryResult    = results.find((r) => r.highlight) ?? results[0];
   const secondaryResults = results.filter((r) => r !== primaryResult);
 
   const handleReset = useCallback(() => {
@@ -232,7 +379,6 @@ export default function CalcScreen() {
 
   const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
 
-  // Set header reset button
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -250,46 +396,75 @@ export default function CalcScreen() {
   if (!calc || !trade) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.mutedForeground }}>Calculator not found</Text>
+        <Text style={{ color: colors.mutedForeground }}>
+          Calculator not found
+        </Text>
       </View>
     );
   }
 
   const numericInputs = calc.inputs.filter((i) => i.type !== "select");
-  const hasResults = results.length > 0;
   const primaryIsValid =
-    primaryResult &&
-    !isNaN(primaryResult.value) &&
-    primaryResult.value !== 0;
+    primaryResult && !isNaN(primaryResult.value) && primaryResult.value !== 0;
+  const diffColor = calc.difficulty
+    ? DIFFICULTY_COLOR[calc.difficulty]
+    : undefined;
 
   return (
     <KeyboardAvoidingView
       style={[styles.screen, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* ── Scrollable input area ─────────────────────────────────────── */}
+      {/* ── Scrollable area ──────────────────────────────────────────── */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Calculator description */}
-        {calc.description ? (
+        {/* Description / category / difficulty */}
+        {(calc.description || calc.category || calc.difficulty) ? (
           <View
             style={[
               styles.descCard,
-              { backgroundColor: tradeColor + "12", borderColor: tradeColor + "30" },
+              {
+                backgroundColor: tradeColor + "10",
+                borderColor: tradeColor + "28",
+              },
             ]}
           >
-            <Feather name="info" size={13} color={tradeColor} />
-            <Text style={[styles.descText, { color: colors.foreground }]}>
-              {calc.description}
-            </Text>
+            <View style={styles.descTop}>
+              <Feather name="info" size={13} color={tradeColor} />
+              {calc.category ? (
+                <Text style={[styles.categoryText, { color: tradeColor }]}>
+                  {calc.category.toUpperCase()}
+                </Text>
+              ) : null}
+              {diffColor ? (
+                <View
+                  style={[
+                    styles.diffBadge,
+                    {
+                      backgroundColor: diffColor + "20",
+                      borderColor: diffColor + "40",
+                    },
+                  ]}
+                >
+                  <Text style={[styles.diffText, { color: diffColor }]}>
+                    {(calc.difficulty ?? "").toUpperCase()}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            {calc.description ? (
+              <Text style={[styles.descText, { color: colors.foreground }]}>
+                {calc.description}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
-        {/* Inputs */}
+        {/* Inputs card */}
         <View
           style={[
             styles.inputsCard,
@@ -297,10 +472,21 @@ export default function CalcScreen() {
           ]}
         >
           <View style={styles.cardHeader}>
-            <View style={[styles.cardHeaderDot, { backgroundColor: tradeColor }]} />
+            <View
+              style={[styles.cardHeaderDot, { backgroundColor: tradeColor }]}
+            />
             <Text style={[styles.cardHeaderLabel, { color: tradeColor }]}>
               INPUTS
             </Text>
+            {hasErrors && (
+              <View style={styles.errorBadge}>
+                <Feather name="alert-circle" size={11} color="#EF4444" />
+                <Text style={styles.errorBadgeText}>
+                  {Object.keys(validationErrors).length} error
+                  {Object.keys(validationErrors).length > 1 ? "s" : ""}
+                </Text>
+              </View>
+            )}
           </View>
 
           {calc.inputs.map((input, idx) => {
@@ -333,20 +519,60 @@ export default function CalcScreen() {
                     }}
                     tradeColor={tradeColor}
                     autoFocus={false}
+                    error={validationErrors[input.id]}
                   />
                 )}
                 {!isLast && (
                   <View
-                    style={[styles.fieldDivider, { backgroundColor: colors.border }]}
+                    style={[
+                      styles.fieldDivider,
+                      { backgroundColor: colors.border },
+                    ]}
                   />
                 )}
               </View>
             );
           })}
         </View>
+
+        {/* ── Supplementary info cards ─────────────────────────────── */}
+
+        {calc.warnings && calc.warnings.length > 0 && (
+          <InfoCard
+            icon="alert-triangle"
+            title={`Warnings  (${calc.warnings.length})`}
+            items={calc.warnings}
+            color="#F59E0B"
+            startOpen
+          />
+        )}
+
+        <FormulaCard
+          formula={calc.formula}
+          steps={calc.calculationSteps}
+          color={tradeColor}
+        />
+
+        {calc.tips && calc.tips.length > 0 && (
+          <InfoCard
+            icon="zap"
+            title="Pro Tips"
+            items={calc.tips}
+            color="#3B82F6"
+          />
+        )}
+
+        {calc.references && calc.references.length > 0 && (
+          <InfoCard
+            icon="book-open"
+            title="Code References"
+            items={calc.references}
+            color={colors.mutedForeground}
+          />
+        )}
       </ScrollView>
 
-      {/* ── Sticky results panel ──────────────────────────────────────── */}
+      {/* ── Sticky results panel ─────────────────────────────────────── */}
       <View
         style={[
           styles.resultsPanel,
@@ -357,12 +583,30 @@ export default function CalcScreen() {
           },
         ]}
       >
+        {/* Validation error summary */}
+        {hasErrors && (
+          <View
+            style={[
+              styles.validationBanner,
+              { backgroundColor: "#EF444415", borderColor: "#EF444435" },
+            ]}
+          >
+            <Feather name="alert-circle" size={13} color="#EF4444" />
+            <Text style={styles.validationBannerText}>
+              Fix the highlighted inputs above to see results
+            </Text>
+          </View>
+        )}
+
         {/* Primary result */}
-        {primaryResult ? (
+        {!hasErrors && primaryResult ? (
           <View
             style={[
               styles.primaryResult,
-              { backgroundColor: tradeColor + "10", borderColor: tradeColor + "25" },
+              {
+                backgroundColor: tradeColor + "10",
+                borderColor: tradeColor + "25",
+              },
             ]}
           >
             <Text style={[styles.primaryLabel, { color: tradeColor }]}>
@@ -380,17 +624,24 @@ export default function CalcScreen() {
                     {formatVal(primaryResult.value)}
                   </Text>
                   <Text style={[styles.primaryUnit, { color: tradeColor }]}>
-                    {"  "}{primaryResult.unit}
+                    {"  "}
+                    {primaryResult.unit}
                   </Text>
                 </>
               ) : (
-                <Text style={[styles.primaryValue, { color: colors.mutedForeground, fontSize: 28 }]}>
-                  Enter values above
+                <Text
+                  style={[
+                    styles.primaryValue,
+                    { color: colors.mutedForeground, fontSize: 22 },
+                  ]}
+                  adjustsFontSizeToFit
+                  numberOfLines={1}
+                >
+                  {primaryResult.unit || "Enter values above"}
                 </Text>
               )}
             </View>
 
-            {/* Copy button */}
             {primaryIsValid && (
               <Pressable
                 style={({ pressed }) => [
@@ -419,16 +670,26 @@ export default function CalcScreen() {
               </Pressable>
             )}
           </View>
-        ) : (
-          <View style={[styles.primaryResult, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Text style={[styles.primaryValue, { color: colors.mutedForeground, fontSize: 28 }]}>
+        ) : !hasErrors ? (
+          <View
+            style={[
+              styles.primaryResult,
+              { backgroundColor: colors.muted, borderColor: colors.border },
+            ]}
+          >
+            <Text
+              style={[
+                styles.primaryValue,
+                { color: colors.mutedForeground, fontSize: 28 },
+              ]}
+            >
               Enter values above
             </Text>
           </View>
-        )}
+        ) : null}
 
         {/* Secondary results */}
-        {secondaryResults.length > 0 && (
+        {!hasErrors && secondaryResults.length > 0 && (
           <View style={styles.secondaryList}>
             {secondaryResults.map((r, i) => {
               const valid = !isNaN(r.value) && r.value !== 0;
@@ -443,10 +704,21 @@ export default function CalcScreen() {
                     },
                   ]}
                 >
-                  <Text style={[styles.secondaryLabel, { color: colors.mutedForeground }]}>
+                  <Text
+                    style={[
+                      styles.secondaryLabel,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
                     {r.label}
                   </Text>
-                  <Text style={[styles.secondaryValue, { color: colors.foreground }]}>
+                  <Text
+                    style={[
+                      styles.secondaryValue,
+                      { color: colors.foreground },
+                    ]}
+                    numberOfLines={2}
+                  >
                     {valid
                       ? `${formatVal(r.value)}${r.unit ? " " + r.unit : ""}`
                       : r.unit ?? "—"}
@@ -461,29 +733,50 @@ export default function CalcScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll: { flex: 1 },
+  screen:        { flex: 1 },
+  center:        { flex: 1, alignItems: "center", justifyContent: "center" },
+  scroll:        { flex: 1 },
   scrollContent: { padding: 16, gap: 12, paddingBottom: 8 },
 
+  // ── Description card
   descCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
     gap: 8,
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
   },
+  descTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  categoryText: {
+    fontSize: 10,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1.1,
+  },
+  diffBadge: {
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  diffText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.8,
+  },
   descText: {
-    flex: 1,
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     lineHeight: 19,
   },
 
+  // ── Inputs card
   inputsCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -497,16 +790,29 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 8,
   },
-  cardHeaderDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
+  cardHeaderDot: { width: 6, height: 6, borderRadius: 3 },
   cardHeaderLabel: {
     fontSize: 10,
     fontFamily: "Inter_700Bold",
     letterSpacing: 1.2,
+    flex: 1,
   },
+  errorBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#EF444415",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  errorBadgeText: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    color: "#EF4444",
+  },
+
+  // ── Fields
   fieldWrap: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -547,11 +853,20 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 15,
   },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  fieldError: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: "#EF4444",
+  },
   fieldDivider: {
     height: StyleSheet.hairlineWidth,
     marginHorizontal: 16,
   },
-
   selectRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -568,7 +883,80 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
   },
 
-  // ── Results panel ─────────────────────────────────────────────────────────
+  // ── Info cards
+  infoCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  infoCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  infoCardTitle: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.6,
+  },
+  infoCardBody: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  infoCardRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+  },
+  infoCardBullet: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Inter_700Bold",
+    minWidth: 10,
+  },
+  infoCardItem: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+  },
+  infoCardMono: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 19,
+  },
+  formulaBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 4,
+  },
+  formulaText: {
+    fontSize: 13,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 20,
+  },
+
+  // ── Results panel
+  validationBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+  },
+  validationBannerText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: "#EF4444",
+    flex: 1,
+  },
   resultsPanel: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 14,
@@ -592,7 +980,6 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     flexWrap: "wrap",
     justifyContent: "center",
-    gap: 0,
   },
   primaryValue: {
     fontSize: 48,
@@ -620,7 +1007,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter_600SemiBold",
   },
-
   secondaryList: {
     borderRadius: 12,
     overflow: "hidden",
@@ -639,7 +1025,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   secondaryValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Inter_600SemiBold",
+    textAlign: "right",
+    flexShrink: 1,
   },
 });

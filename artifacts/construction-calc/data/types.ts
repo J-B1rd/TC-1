@@ -1,4 +1,5 @@
 export type InputType = "number" | "select";
+export type Difficulty = "basic" | "intermediate" | "advanced";
 
 export type SelectOption = {
   label: string;
@@ -14,7 +15,9 @@ export type CalculatorInput = {
   defaultValue?: string;
   hint?: string;
   min?: number;
+  max?: number;
   step?: number;
+  integer?: boolean;
 };
 
 export type CalculatorResult = {
@@ -28,6 +31,13 @@ export type Calculator = {
   id: string;
   name: string;
   description: string;
+  category?: string;
+  difficulty?: Difficulty;
+  formula?: string;
+  calculationSteps?: string[];
+  warnings?: string[];
+  references?: string[];
+  tips?: string[];
   inputs: CalculatorInput[];
   calculate: (inputs: Record<string, string>) => CalculatorResult[];
 };
