@@ -19,11 +19,25 @@ const WIRE_TABLE: { label: string; cu: number; al: number | null }[] = [
   { label: "500 kcmil",  cu: 0.0258, al: 0.0424 },
 ];
 
+function parseVD(inputs: Record<string, string>) {
+  const sysV      = parseFloat(inputs.voltage)  || 120;
+  const phase     = parseInt(inputs.phase)      || 1;
+  const isCu      = inputs.material !== "al";
+  const amps      = Math.max(parseFloat(inputs.amps)     || 0, 0);
+  const dist      = Math.max(parseFloat(inputs.distance) || 0, 0);
+  const row       = WIRE_TABLE.find((w) => w.label === inputs.awg) ?? WIRE_TABLE[1];
+  const R         = isCu ? row.cu : (row.al ?? row.cu);
+  const phaseMult = phase === 3 ? Math.sqrt(3) : 2;
+  const vd        = (amps * R * phaseMult * dist) / 1000;
+  const vdPct     = sysV > 0 ? (vd / sysV) * 100 : 0;
+  return { sysV, phase, isCu, amps, dist, row, R, phaseMult, vd, vdPct };
+}
+
 export const voltageDrop: Calculator = {
   id: "voltage-drop",
   name: "Voltage Drop",
   description:
-    "NEC Chapter 9 Table 9 AC resistance method at 75\u00B0C in conduit. " +
+    "NEC Chapter\u20099 Table\u20099 AC resistance method at 75\u00B0C in conduit. " +
     "NEC recommends \u22643\u202F% for branch circuits and \u22645\u202F% total (feeder + branch).",
   category: "NEC Compliance",
   difficulty: "intermediate",
@@ -91,18 +105,9 @@ export const voltageDrop: Calculator = {
     { id: "amps",     label: "Load Current",    unit: "A",  type: "number", defaultValue: "20",  min: 0, max: 6000 },
     { id: "distance", label: "One-Way Distance", unit: "ft", type: "number", defaultValue: "100", min: 0, max: 10000 },
   ],
-  calculate: (inputs) => {
-    const sysV  = parseFloat(inputs.voltage)  || 120;
-    const phase = parseInt(inputs.phase)      || 1;
-    const isCu  = inputs.material !== "al";
-    const amps  = Math.max(parseFloat(inputs.amps)     || 0, 0);
-    const dist  = Math.max(parseFloat(inputs.distance) || 0, 0);
 
-    const row  = WIRE_TABLE.find((w) => w.label === inputs.awg) ?? WIRE_TABLE[1];
-    const rRaw = isCu ? row.cu : (row.al ?? row.cu);
-    const phaseMult = phase === 3 ? Math.sqrt(3) : 2;
-    const vd    = (amps * rRaw * phaseMult * dist) / 1000;
-    const vdPct = sysV > 0 ? (vd / sysV) * 100 : 0;
+  calculate: (inputs) => {
+    const { sysV, phase, isCu, row, R, phaseMult, vd, vdPct, amps } = parseVD(inputs);
 
     const pass = vdPct <= 3;
     const statusText = pass
@@ -112,9 +117,9 @@ export const voltageDrop: Calculator = {
     let suggestion = "\u2713 Current wire size is within NEC limits";
     if (!pass) {
       for (const w of WIRE_TABLE) {
-        const r2 = isCu ? w.cu : (w.al ?? w.cu);
-        if (r2 >= rRaw) continue;
-        const pct2 = (amps * r2 * phaseMult * dist) / 1000 / sysV * 100;
+        const r2  = isCu ? w.cu : (w.al ?? w.cu);
+        if (r2 >= R) continue;
+        const pct2 = (amps * r2 * phaseMult * parseFloat(inputs.distance || "0")) / 1000 / sysV * 100;
         if (pct2 <= 3) {
           suggestion = `\u2191 Upsize to ${w.label} ${isCu ? "Cu" : "Al"} \u2192 ${pct2.toFixed(2)}% drop`;
           break;
@@ -123,13 +128,34 @@ export const voltageDrop: Calculator = {
     }
 
     return [
-      { label: "Voltage Drop",      value: Math.round(vd * 100) / 100,      unit: "V",   highlight: true },
-      { label: "Drop Percentage",   value: Math.round(vdPct * 100) / 100,   unit: "%" },
+      { label: "Voltage Drop",      value: Math.round(vd * 100) / 100,          unit: "V",   highlight: true },
+      { label: "Drop Percentage",   value: Math.round(vdPct * 100) / 100,       unit: "%" },
       { label: "Voltage at Load",   value: Math.round((sysV - vd) * 100) / 100, unit: "V" },
       { label: "Status",            value: 0, unit: statusText },
       { label: "Suggestion",        value: 0, unit: suggestion },
-      { label: `R (${isCu ? "Cu" : "Al"}, 75\u00B0C)`, value: rRaw, unit: "\u03A9/kft" },
-      { label: phase === 3 ? "Multiplier (\u221A3)" : "Multiplier (round-trip)", value: Math.round(phaseMult * 1000) / 1000, unit: "\u00D7" },
+      { label: `R (${isCu ? "Cu" : "Al"}, 75\u00B0C)`,
+        value: R, unit: "\u03A9/kft" },
+      { label: phase === 3 ? "Multiplier (\u221A3)" : "Multiplier (round-trip)",
+        value: Math.round(phaseMult * 1000) / 1000, unit: "\u00D7" },
+    ];
+  },
+
+  computeSteps: (inputs) => {
+    const { sysV, phase, isCu, amps, dist, row, R, phaseMult, vd, vdPct } = parseVD(inputs);
+    const mat    = isCu ? "Cu" : "Al";
+    const phStr  = phase === 3 ? "\u221A3 = 1.732 (three-phase)" : "2 (single-phase, round-trip)";
+    const limit3 = +(sysV * 0.03).toFixed(2);
+    const limit5 = +(sysV * 0.05).toFixed(2);
+    const pass3  = vdPct <= 3;
+    const pass5  = vdPct <= 5;
+    return [
+      `Wire: ${row.label} ${mat}, R = ${R} \u03A9/kft  (NEC Ch.\u20099 Table\u20099, 75\u00B0C in conduit)`,
+      `Phase multiplier = ${phStr}`,
+      `VD = ${amps} A \u00D7 ${phaseMult.toFixed(3)} \u00D7 ${R} \u03A9/kft \u00D7 ${dist} ft \u00F7 1,000`,
+      `VD = ${(amps * phaseMult * R * dist).toFixed(3)} \u00F7 1,000 = ${vd.toFixed(3)} V`,
+      `VD% = ${vd.toFixed(3)} \u00F7 ${sysV} V \u00D7 100 = ${vdPct.toFixed(3)}%`,
+      `NEC 3% branch limit = 3% \u00D7 ${sysV} V = ${limit3} V  \u2192 ${pass3 ? "\u2713 PASS" : "\u2717 OVER"}`,
+      `NEC 5% total limit  = 5% \u00D7 ${sysV} V = ${limit5} V  \u2192 ${pass5 ? "\u2713 PASS" : "\u2717 OVER"}`,
     ];
   },
 };

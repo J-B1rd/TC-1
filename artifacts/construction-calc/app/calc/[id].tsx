@@ -20,14 +20,17 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { CalculatorInput, CalculatorResult, Difficulty } from "@/data/calculators";
+import type {
+  CalculatorInput,
+  CalculatorResult,
+  Difficulty,
+} from "@/data/calculators";
 import { getCalculatorById, getTradeById } from "@/data/calculators";
-import { validateInputs, preProcessValues } from "@/data/validation";
+import { preProcessValues, validateInputs } from "@/data/validation";
 import { useColors } from "@/hooks/useColors";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatVal(value: number): string {
   if (!isFinite(value) || isNaN(value)) return "—";
@@ -36,12 +39,12 @@ function formatVal(value: number): string {
 }
 
 const DIFFICULTY_COLOR: Record<Difficulty, string> = {
-  basic:        "#10B981",
+  basic: "#10B981",
   intermediate: "#F59E0B",
-  advanced:     "#EF4444",
+  advanced: "#EF4444",
 };
 
-// ─── Number field ─────────────────────────────────────────────────────────────
+// ─── NumberField ──────────────────────────────────────────────────────────────
 
 function NumberField({
   input,
@@ -96,7 +99,11 @@ function NumberField({
           <View
             style={[
               styles.fieldUnit,
-              { borderLeftColor: focused ? tradeColor + "40" : colors.border },
+              {
+                borderLeftColor: focused
+                  ? tradeColor + "40"
+                  : colors.border,
+              },
             ]}
           >
             <Text
@@ -111,9 +118,9 @@ function NumberField({
         ) : null}
       </View>
       {error ? (
-        <View style={styles.errorRow}>
+        <View style={styles.inlineErrorRow}>
           <Feather name="alert-circle" size={11} color="#EF4444" />
-          <Text style={styles.fieldError}>{error}</Text>
+          <Text style={styles.inlineErrorText}>{error}</Text>
         </View>
       ) : input.hint ? (
         <Text style={[styles.fieldHint, { color: colors.mutedForeground }]}>
@@ -124,7 +131,7 @@ function NumberField({
   );
 }
 
-// ─── Select field ─────────────────────────────────────────────────────────────
+// ─── SelectField ──────────────────────────────────────────────────────────────
 
 function SelectField({
   input,
@@ -183,30 +190,33 @@ function SelectField({
   );
 }
 
-// ─── Collapsible info card ────────────────────────────────────────────────────
+// ─── CollapsibleSection ───────────────────────────────────────────────────────
 
-function InfoCard({
+function CollapsibleSection({
   icon,
   title,
-  items,
   color,
   startOpen = false,
-  mono = false,
+  children,
 }: {
   icon: keyof typeof Feather.glyphMap;
   title: string;
-  items: string[];
   color: string;
   startOpen?: boolean;
-  mono?: boolean;
+  children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(startOpen);
   const colors = useColors();
 
   return (
-    <View style={[styles.infoCard, { borderColor: color + "35" }]}>
+    <View
+      style={[
+        styles.sectionDivider,
+        { borderTopColor: colors.border },
+      ]}
+    >
       <Pressable
-        style={[styles.infoCardHeader, { backgroundColor: color + "15" }]}
+        style={styles.sectionHeader}
         onPress={() => {
           Haptics.selectionAsync();
           setOpen((o) => !o);
@@ -214,7 +224,7 @@ function InfoCard({
         hitSlop={4}
       >
         <Feather name={icon} size={13} color={color} />
-        <Text style={[styles.infoCardTitle, { color }]}>{title}</Text>
+        <Text style={[styles.sectionTitle, { color }]}>{title}</Text>
         <View style={{ flex: 1 }} />
         <Feather
           name={open ? "chevron-up" : "chevron-down"}
@@ -223,108 +233,96 @@ function InfoCard({
         />
       </Pressable>
       {open && (
-        <View style={[styles.infoCardBody, { borderTopColor: color + "25" }]}>
-          {items.map((item, i) => (
-            <View key={i} style={styles.infoCardRow}>
-              <Text style={[styles.infoCardBullet, { color }]}>
-                {mono ? "" : "•"}
-              </Text>
-              <Text
-                style={[
-                  mono ? styles.infoCardMono : styles.infoCardItem,
-                  { color: colors.foreground },
-                ]}
-              >
-                {item}
-              </Text>
-            </View>
-          ))}
-        </View>
+        <View style={styles.sectionContent}>{children}</View>
       )}
     </View>
   );
 }
 
-// ─── Formula box ─────────────────────────────────────────────────────────────
+// ─── ResultRow ────────────────────────────────────────────────────────────────
 
-function FormulaCard({
-  formula,
-  steps,
-  color,
+function ResultRow({
+  result,
+  last,
 }: {
-  formula?: string;
-  steps?: string[];
-  color: string;
+  result: CalculatorResult;
+  last: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const colors = useColors();
-  if (!formula && (!steps || steps.length === 0)) return null;
-
+  const isStatus = result.value === 0 && result.unit;
   return (
-    <View style={[styles.infoCard, { borderColor: color + "35" }]}>
-      <Pressable
-        style={[styles.infoCardHeader, { backgroundColor: color + "12" }]}
-        onPress={() => {
-          Haptics.selectionAsync();
-          setOpen((o) => !o);
-        }}
-        hitSlop={4}
+    <View
+      style={[
+        styles.resultRow,
+        !last && {
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+      ]}
+    >
+      <Text
+        style={[styles.resultRowLabel, { color: colors.mutedForeground }]}
       >
-        <Feather name="code" size={13} color={color} />
-        <Text style={[styles.infoCardTitle, { color }]}>
-          How It&apos;s Calculated
-        </Text>
-        <View style={{ flex: 1 }} />
-        <Feather
-          name={open ? "chevron-up" : "chevron-down"}
-          size={13}
-          color={color}
-        />
-      </Pressable>
-      {open && (
-        <View style={[styles.infoCardBody, { borderTopColor: color + "25" }]}>
-          {formula ? (
-            <View
-              style={[
-                styles.formulaBox,
-                { backgroundColor: color + "10", borderColor: color + "30" },
-              ]}
-            >
-              <Text style={[styles.formulaText, { color: colors.foreground }]}>
-                {formula}
-              </Text>
-            </View>
-          ) : null}
-          {steps?.map((step, i) => (
-            <View key={i} style={styles.infoCardRow}>
-              <Text style={[styles.infoCardItem, { color: colors.foreground }]}>
-                {step}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+        {result.label}
+      </Text>
+      <Text
+        style={[styles.resultRowValue, { color: colors.foreground }]}
+        numberOfLines={2}
+      >
+        {isStatus
+          ? result.unit
+          : `${formatVal(result.value)}${result.unit ? " " + result.unit : ""}`}
+      </Text>
     </View>
   );
 }
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+// ─── BulletRow ────────────────────────────────────────────────────────────────
+
+function BulletRow({
+  text,
+  color,
+  mono,
+}: {
+  text: string;
+  color: string;
+  mono?: boolean;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.bulletRow}>
+      {mono ? null : (
+        <Text style={[styles.bulletDot, { color }]}>•</Text>
+      )}
+      <Text
+        style={[
+          mono ? styles.monoText : styles.bulletText,
+          { color: colors.foreground },
+        ]}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function CalcScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
   const [tradeId, calcId] = (id ?? "").split("--");
   const trade = getTradeById(tradeId);
-  const calc  = getCalculatorById(tradeId, calcId);
-
+  const calc = getCalculatorById(tradeId, calcId);
   const tradeColor = trade?.color ?? "#FF6B00";
 
   const defaultValues = useMemo(() => {
     const init: Record<string, string> = {};
-    calc?.inputs.forEach((inp) => { init[inp.id] = inp.defaultValue ?? ""; });
+    calc?.inputs.forEach((inp) => {
+      init[inp.id] = inp.defaultValue ?? "";
+    });
     return init;
   }, [calc]);
 
@@ -333,10 +331,11 @@ export default function CalcScreen() {
 
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
-  // Fraction-aware pre-processing: "3/4" → "0.75" before passing to calculate()
-  const processedValues = useMemo(() => preProcessValues(values), [values]);
+  const processedValues = useMemo(
+    () => preProcessValues(values),
+    [values],
+  );
 
-  // Validation errors (keyed by input id)
   const validationErrors = useMemo(
     () => validateInputs(calc?.inputs ?? [], values),
     [calc, values],
@@ -352,8 +351,26 @@ export default function CalcScreen() {
     }
   }, [calc, processedValues, hasErrors]);
 
-  const primaryResult    = results.find((r) => r.highlight) ?? results[0];
-  const secondaryResults = results.filter((r) => r !== primaryResult);
+  const computedSteps: string[] = useMemo(() => {
+    if (!calc?.computeSteps || hasErrors) return [];
+    try {
+      return calc.computeSteps(processedValues);
+    } catch {
+      return [];
+    }
+  }, [calc, processedValues, hasErrors]);
+
+  const primaryResult = results.find((r) => r.highlight) ?? results[0];
+  const breakdownResults = results.filter((r) => r !== primaryResult);
+  const primaryIsNumeric =
+    primaryResult &&
+    !isNaN(primaryResult.value) &&
+    primaryResult.value !== 0;
+
+  const hasHowCalc =
+    computedSteps.length > 0 ||
+    (calc?.calculationSteps && calc.calculationSteps.length > 0) ||
+    !!calc?.formula;
 
   const handleReset = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -363,10 +380,9 @@ export default function CalcScreen() {
 
   const handleCopy = useCallback(async () => {
     if (!primaryResult) return;
-    const text =
-      primaryResult.unit && !isNaN(primaryResult.value)
-        ? `${formatVal(primaryResult.value)} ${primaryResult.unit}`
-        : primaryResult.unit ?? "—";
+    const text = primaryIsNumeric
+      ? `${formatVal(primaryResult.value)} ${primaryResult.unit}`
+      : (primaryResult.unit ?? "—");
     try {
       await Clipboard.setStringAsync(text);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -375,9 +391,7 @@ export default function CalcScreen() {
     } catch {
       Share.share({ message: `${calc?.name}: ${text}` });
     }
-  }, [primaryResult, calc]);
-
-  const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
+  }, [primaryResult, primaryIsNumeric, calc]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -404,8 +418,6 @@ export default function CalcScreen() {
   }
 
   const numericInputs = calc.inputs.filter((i) => i.type !== "select");
-  const primaryIsValid =
-    primaryResult && !isNaN(primaryResult.value) && primaryResult.value !== 0;
   const diffColor = calc.difficulty
     ? DIFFICULTY_COLOR[calc.difficulty]
     : undefined;
@@ -415,14 +427,13 @@ export default function CalcScreen() {
       style={[styles.screen, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* ── Scrollable area ──────────────────────────────────────────── */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Description / category / difficulty */}
+        {/* ── Description card ──────────────────────────────────── */}
         {(calc.description || calc.category || calc.difficulty) ? (
           <View
             style={[
@@ -433,10 +444,12 @@ export default function CalcScreen() {
               },
             ]}
           >
-            <View style={styles.descTop}>
+            <View style={styles.descMeta}>
               <Feather name="info" size={13} color={tradeColor} />
               {calc.category ? (
-                <Text style={[styles.categoryText, { color: tradeColor }]}>
+                <Text
+                  style={[styles.categoryText, { color: tradeColor }]}
+                >
                   {calc.category.toUpperCase()}
                 </Text>
               ) : null}
@@ -446,7 +459,7 @@ export default function CalcScreen() {
                     styles.diffBadge,
                     {
                       backgroundColor: diffColor + "20",
-                      borderColor: diffColor + "40",
+                      borderColor: diffColor + "45",
                     },
                   ]}
                 >
@@ -457,25 +470,32 @@ export default function CalcScreen() {
               ) : null}
             </View>
             {calc.description ? (
-              <Text style={[styles.descText, { color: colors.foreground }]}>
+              <Text
+                style={[styles.descText, { color: colors.foreground }]}
+              >
                 {calc.description}
               </Text>
             ) : null}
           </View>
         ) : null}
 
-        {/* Inputs card */}
+        {/* ── Inputs card ───────────────────────────────────────── */}
         <View
           style={[
-            styles.inputsCard,
+            styles.card,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
           <View style={styles.cardHeader}>
             <View
-              style={[styles.cardHeaderDot, { backgroundColor: tradeColor }]}
+              style={[
+                styles.cardHeaderDot,
+                { backgroundColor: tradeColor },
+              ]}
             />
-            <Text style={[styles.cardHeaderLabel, { color: tradeColor }]}>
+            <Text
+              style={[styles.cardHeaderLabel, { color: tradeColor }]}
+            >
               INPUTS
             </Text>
             {hasErrors && (
@@ -498,7 +518,7 @@ export default function CalcScreen() {
                     input={input}
                     value={values[input.id] ?? input.defaultValue ?? ""}
                     onChange={(v) =>
-                      setValues((prev) => ({ ...prev, [input.id]: v }))
+                      setValues((p) => ({ ...p, [input.id]: v }))
                     }
                     tradeColor={tradeColor}
                   />
@@ -507,18 +527,17 @@ export default function CalcScreen() {
                     input={input}
                     value={values[input.id] ?? ""}
                     onChange={(v) =>
-                      setValues((prev) => ({ ...prev, [input.id]: v }))
+                      setValues((p) => ({ ...p, [input.id]: v }))
                     }
                     inputRef={(el) => {
-                      const numIdx = numericInputs.indexOf(input);
-                      if (numIdx >= 0) inputRefs.current[numIdx] = el;
+                      const ni = numericInputs.indexOf(input);
+                      if (ni >= 0) inputRefs.current[ni] = el;
                     }}
                     onSubmit={() => {
-                      const numIdx = numericInputs.indexOf(input);
-                      inputRefs.current[numIdx + 1]?.focus();
+                      const ni = numericInputs.indexOf(input);
+                      inputRefs.current[ni + 1]?.focus();
                     }}
                     tradeColor={tradeColor}
-                    autoFocus={false}
                     error={validationErrors[input.id]}
                   />
                 )}
@@ -535,200 +554,249 @@ export default function CalcScreen() {
           })}
         </View>
 
-        {/* ── Supplementary info cards ─────────────────────────────── */}
-
-        {calc.warnings && calc.warnings.length > 0 && (
-          <InfoCard
-            icon="alert-triangle"
-            title={`Warnings  (${calc.warnings.length})`}
-            items={calc.warnings}
-            color="#F59E0B"
-            startOpen
-          />
-        )}
-
-        <FormulaCard
-          formula={calc.formula}
-          steps={calc.calculationSteps}
-          color={tradeColor}
-        />
-
-        {calc.tips && calc.tips.length > 0 && (
-          <InfoCard
-            icon="zap"
-            title="Pro Tips"
-            items={calc.tips}
-            color="#3B82F6"
-          />
-        )}
-
-        {calc.references && calc.references.length > 0 && (
-          <InfoCard
-            icon="book-open"
-            title="Code References"
-            items={calc.references}
-            color={colors.mutedForeground}
-          />
-        )}
-      </ScrollView>
-
-      {/* ── Sticky results panel ─────────────────────────────────────── */}
-      <View
-        style={[
-          styles.resultsPanel,
-          {
-            backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            paddingBottom: bottomPad + 12,
-          },
-        ]}
-      >
-        {/* Validation error summary */}
+        {/* ── Validation banner ─────────────────────────────────── */}
         {hasErrors && (
           <View
             style={[
               styles.validationBanner,
-              { backgroundColor: "#EF444415", borderColor: "#EF444435" },
-            ]}
-          >
-            <Feather name="alert-circle" size={13} color="#EF4444" />
-            <Text style={styles.validationBannerText}>
-              Fix the highlighted inputs above to see results
-            </Text>
-          </View>
-        )}
-
-        {/* Primary result */}
-        {!hasErrors && primaryResult ? (
-          <View
-            style={[
-              styles.primaryResult,
               {
-                backgroundColor: tradeColor + "10",
-                borderColor: tradeColor + "25",
+                backgroundColor: "#EF444412",
+                borderColor: "#EF444430",
               },
             ]}
           >
-            <Text style={[styles.primaryLabel, { color: tradeColor }]}>
-              {primaryResult.label.toUpperCase()}
+            <Feather name="alert-circle" size={14} color="#EF4444" />
+            <Text style={styles.validationBannerText}>
+              Fix the highlighted inputs to see results
             </Text>
+          </View>
+        )}
 
-            <View style={styles.primaryValueRow}>
-              {primaryIsValid ? (
-                <>
+        {/* ── Results card ──────────────────────────────────────── */}
+        {!hasErrors && results.length > 0 && (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                paddingBottom: 0,
+                overflow: "hidden",
+              },
+            ]}
+          >
+            {/* Section header */}
+            <View style={styles.cardHeader}>
+              <View
+                style={[
+                  styles.cardHeaderDot,
+                  { backgroundColor: tradeColor },
+                ]}
+              />
+              <Text
+                style={[styles.cardHeaderLabel, { color: tradeColor }]}
+              >
+                RESULTS
+              </Text>
+            </View>
+
+            {/* Primary result */}
+            <View
+              style={[
+                styles.primaryBlock,
+                {
+                  backgroundColor: tradeColor + "0D",
+                  borderBottomColor: tradeColor + "22",
+                },
+              ]}
+            >
+              <Text
+                style={[styles.primaryLabel, { color: tradeColor }]}
+              >
+                {(primaryResult?.label ?? "").toUpperCase()}
+              </Text>
+
+              <View style={styles.primaryValueRow}>
+                {primaryIsNumeric ? (
+                  <>
+                    <Text
+                      style={[
+                        styles.primaryValue,
+                        { color: colors.foreground },
+                      ]}
+                      adjustsFontSizeToFit
+                      numberOfLines={1}
+                    >
+                      {formatVal(primaryResult!.value)}
+                    </Text>
+                    <Text
+                      style={[styles.primaryUnit, { color: tradeColor }]}
+                    >
+                      {"  "}
+                      {primaryResult!.unit}
+                    </Text>
+                  </>
+                ) : (
                   <Text
-                    style={[styles.primaryValue, { color: colors.foreground }]}
+                    style={[
+                      styles.primaryValue,
+                      {
+                        color: colors.mutedForeground,
+                        fontSize: 20,
+                        letterSpacing: 0,
+                      },
+                    ]}
+                    numberOfLines={2}
                     adjustsFontSizeToFit
-                    numberOfLines={1}
                   >
-                    {formatVal(primaryResult.value)}
+                    {primaryResult?.unit ?? "—"}
                   </Text>
-                  <Text style={[styles.primaryUnit, { color: tradeColor }]}>
-                    {"  "}
-                    {primaryResult.unit}
-                  </Text>
-                </>
-              ) : (
-                <Text
-                  style={[
-                    styles.primaryValue,
-                    { color: colors.mutedForeground, fontSize: 22 },
+                )}
+              </View>
+
+              {primaryIsNumeric && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.copyBtn,
+                    {
+                      backgroundColor: copied
+                        ? tradeColor
+                        : tradeColor + "1A",
+                      borderColor: tradeColor + "45",
+                      opacity: pressed ? 0.7 : 1,
+                    },
                   ]}
-                  adjustsFontSizeToFit
-                  numberOfLines={1}
+                  onPress={handleCopy}
                 >
-                  {primaryResult.unit || "Enter values above"}
-                </Text>
+                  <Feather
+                    name={copied ? "check" : "copy"}
+                    size={12}
+                    color={copied ? "#fff" : tradeColor}
+                  />
+                  <Text
+                    style={[
+                      styles.copyBtnText,
+                      { color: copied ? "#fff" : tradeColor },
+                    ]}
+                  >
+                    {copied ? "Copied!" : "Copy"}
+                  </Text>
+                </Pressable>
               )}
             </View>
 
-            {primaryIsValid && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.copyBtn,
-                  {
-                    backgroundColor: copied ? tradeColor : tradeColor + "20",
-                    borderColor: tradeColor + "50",
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-                onPress={handleCopy}
-              >
-                <Feather
-                  name={copied ? "check" : "copy"}
-                  size={12}
-                  color={copied ? "#fff" : tradeColor}
-                />
-                <Text
-                  style={[
-                    styles.copyBtnText,
-                    { color: copied ? "#fff" : tradeColor },
-                  ]}
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </Text>
-              </Pressable>
+            {/* Breakdown table */}
+            {breakdownResults.length > 0 && (
+              <View style={styles.breakdownTable}>
+                {breakdownResults.map((r, i) => (
+                  <ResultRow
+                    key={i}
+                    result={r}
+                    last={i === breakdownResults.length - 1}
+                  />
+                ))}
+              </View>
             )}
-          </View>
-        ) : !hasErrors ? (
-          <View
-            style={[
-              styles.primaryResult,
-              { backgroundColor: colors.muted, borderColor: colors.border },
-            ]}
-          >
-            <Text
-              style={[
-                styles.primaryValue,
-                { color: colors.mutedForeground, fontSize: 28 },
-              ]}
-            >
-              Enter values above
-            </Text>
-          </View>
-        ) : null}
 
-        {/* Secondary results */}
-        {!hasErrors && secondaryResults.length > 0 && (
-          <View style={styles.secondaryList}>
-            {secondaryResults.map((r, i) => {
-              const valid = !isNaN(r.value) && r.value !== 0;
-              return (
-                <View
-                  key={i}
-                  style={[
-                    styles.secondaryRow,
-                    i < secondaryResults.length - 1 && {
-                      borderBottomWidth: StyleSheet.hairlineWidth,
-                      borderBottomColor: colors.border,
-                    },
-                  ]}
-                >
-                  <Text
+            {/* ── How It Was Calculated ─────────────────────────── */}
+            {hasHowCalc && (
+              <CollapsibleSection
+                icon="cpu"
+                title="HOW IT WAS CALCULATED"
+                color={tradeColor}
+              >
+                {calc.formula ? (
+                  <View
                     style={[
-                      styles.secondaryLabel,
-                      { color: colors.mutedForeground },
+                      styles.formulaBox,
+                      {
+                        backgroundColor: tradeColor + "0D",
+                        borderColor: tradeColor + "30",
+                      },
                     ]}
                   >
-                    {r.label}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.secondaryValue,
-                      { color: colors.foreground },
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {valid
-                      ? `${formatVal(r.value)}${r.unit ? " " + r.unit : ""}`
-                      : r.unit ?? "—"}
-                  </Text>
-                </View>
-              );
-            })}
+                    <Text
+                      style={[
+                        styles.formulaText,
+                        { color: colors.foreground },
+                      ]}
+                    >
+                      {calc.formula}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {computedSteps.length > 0
+                  ? computedSteps.map((s, i) => (
+                      <BulletRow key={i} text={s} color={tradeColor} mono />
+                    ))
+                  : (calc.calculationSteps ?? []).map((s, i) => (
+                      <BulletRow key={i} text={s} color={tradeColor} />
+                    ))}
+              </CollapsibleSection>
+            )}
+
+            {/* ── Warnings ──────────────────────────────────────── */}
+            {calc.warnings && calc.warnings.length > 0 && (
+              <CollapsibleSection
+                icon="alert-triangle"
+                title={`WARNINGS  (${calc.warnings.length})`}
+                color="#F59E0B"
+                startOpen
+              >
+                {calc.warnings.map((w, i) => (
+                  <BulletRow key={i} text={w} color="#F59E0B" />
+                ))}
+              </CollapsibleSection>
+            )}
+
+            {/* ── Field Notes ───────────────────────────────────── */}
+            {calc.tips && calc.tips.length > 0 && (
+              <CollapsibleSection
+                icon="tool"
+                title="FIELD NOTES"
+                color="#3B82F6"
+              >
+                {calc.tips.map((t, i) => (
+                  <BulletRow key={i} text={t} color="#3B82F6" />
+                ))}
+              </CollapsibleSection>
+            )}
+
+            {/* bottom padding inside card */}
+            <View style={{ height: 4 }} />
           </View>
         )}
-      </View>
+
+        {/* ── Code references (separate card) ───────────────────── */}
+        {calc.references && calc.references.length > 0 && !hasErrors && results.length > 0 && (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                paddingBottom: 0,
+                overflow: "hidden",
+              },
+            ]}
+          >
+            <CollapsibleSection
+              icon="book-open"
+              title="CODE REFERENCES"
+              color={colors.mutedForeground}
+            >
+              {calc.references.map((r, i) => (
+                <BulletRow key={i} text={r} color={colors.mutedForeground} />
+              ))}
+            </CollapsibleSection>
+            <View style={{ height: 4 }} />
+          </View>
+        )}
+
+        {/* bottom scroll padding */}
+        <View style={{ height: 24 }} />
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -736,19 +804,19 @@ export default function CalcScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen:        { flex: 1 },
-  center:        { flex: 1, alignItems: "center", justifyContent: "center" },
-  scroll:        { flex: 1 },
-  scrollContent: { padding: 16, gap: 12, paddingBottom: 8 },
+  screen: { flex: 1 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 16, gap: 12 },
 
-  // ── Description card
+  // Description
   descCard: {
     gap: 8,
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
   },
-  descTop: {
+  descMeta: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -776,8 +844,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // ── Inputs card
-  inputsCard: {
+  // Cards
+  card: {
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
@@ -812,16 +880,9 @@ const styles = StyleSheet.create({
     color: "#EF4444",
   },
 
-  // ── Fields
-  fieldWrap: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  fieldLabel: {
-    fontSize: 15,
-    fontFamily: "Inter_500Medium",
-  },
+  // Fields
+  fieldWrap: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  fieldLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
   fieldInputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -853,12 +914,12 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 15,
   },
-  errorRow: {
+  inlineErrorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
-  fieldError: {
+  inlineErrorText: {
     fontSize: 12,
     fontFamily: "Inter_500Medium",
     color: "#EF4444",
@@ -878,78 +939,16 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderWidth: 1.5,
   },
-  selectChipText: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-  },
+  selectChipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 
-  // ── Info cards
-  infoCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  infoCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-  },
-  infoCardTitle: {
-    fontSize: 12,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 0.6,
-  },
-  infoCardBody: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 6,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  infoCardRow: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "flex-start",
-  },
-  infoCardBullet: {
-    fontSize: 13,
-    lineHeight: 20,
-    fontFamily: "Inter_700Bold",
-    minWidth: 10,
-  },
-  infoCardItem: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
-  },
-  infoCardMono: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 19,
-  },
-  formulaBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 4,
-  },
-  formulaText: {
-    fontSize: 13,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 20,
-  },
-
-  // ── Results panel
+  // Validation banner
   validationBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 10,
+    padding: 12,
   },
   validationBannerText: {
     fontSize: 13,
@@ -957,18 +956,14 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     flex: 1,
   },
-  resultsPanel: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 14,
-    paddingHorizontal: 14,
-    gap: 10,
-  },
-  primaryResult: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
+
+  // Primary result block
+  primaryBlock: {
     alignItems: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     gap: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   primaryLabel: {
     fontSize: 10,
@@ -982,16 +977,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryValue: {
-    fontSize: 48,
+    fontSize: 52,
     fontFamily: "Inter_700Bold",
     letterSpacing: -2,
     textAlign: "center",
   },
   primaryUnit: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: "Inter_600SemiBold",
-    marginLeft: 2,
-    paddingBottom: 4,
+    paddingBottom: 6,
   },
   copyBtn: {
     flexDirection: "row",
@@ -1001,33 +995,93 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    marginTop: 4,
+    marginTop: 6,
   },
-  copyBtnText: {
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
+  copyBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+
+  // Breakdown table
+  breakdownTable: {
+    paddingHorizontal: 4,
+    paddingVertical: 6,
   },
-  secondaryList: {
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  secondaryRow: {
+  resultRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     gap: 8,
   },
-  secondaryLabel: {
+  resultRowLabel: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     flex: 1,
   },
-  secondaryValue: {
-    fontSize: 14,
+  resultRowValue: {
+    fontSize: 13,
     fontFamily: "Inter_600SemiBold",
     textAlign: "right",
     flexShrink: 1,
+  },
+
+  // Collapsible section
+  sectionDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 2,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.8,
+  },
+  sectionContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 5,
+  },
+
+  // Bullet / mono rows
+  bulletRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+  },
+  bulletDot: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: "Inter_700Bold",
+    minWidth: 10,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+  },
+  monoText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 19,
+  },
+
+  // Formula box
+  formulaBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 6,
+  },
+  formulaText: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 19,
   },
 });

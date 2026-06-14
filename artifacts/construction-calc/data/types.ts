@@ -40,6 +40,7 @@ export type Calculator = {
   tips?: string[];
   inputs: CalculatorInput[];
   calculate: (inputs: Record<string, string>) => CalculatorResult[];
+  computeSteps?: (inputs: Record<string, string>) => string[];
 };
 
 export type Trade = {

@@ -14,6 +14,17 @@ const OFFSET_TABLE: { label: string; value: string; mult: number; shrink: number
   { label: "60\u00B0",   value: "60",   mult: 1.155, shrink: 0.577 },
 ];
 
+function parseBend(inputs: Record<string, string>) {
+  const bendType   = inputs.bendType    || "stub90";
+  const sizeKey    = inputs.conduitSize || "3q";
+  const dimA       = Math.max(parseFloat(inputs.dimA) || 0, 0);
+  const dimB       = Math.max(parseFloat(inputs.dimB) || 0, 0);
+  const angleRow   = OFFSET_TABLE.find((o) => o.value === inputs.angle) ?? OFFSET_TABLE[3];
+  const gain       = GAIN[sizeKey] ?? 6;
+  const sizeStr    = SIZE_LABEL[sizeKey] ?? '3/4"';
+  return { bendType, sizeKey, dimA, dimB, angleRow, gain, sizeStr };
+}
+
 export const conduitBend: Calculator = {
   id: "conduit-bend",
   name: "Conduit Bend",
@@ -84,21 +95,16 @@ export const conduitBend: Calculator = {
       hint: "Width of the obstacle to straddle \u2014 4-point saddle only.",
     },
   ],
+
   calculate: (inputs) => {
-    const bendType  = inputs.bendType    || "stub90";
-    const sizeKey   = inputs.conduitSize || "3q";
-    const dimA      = Math.max(parseFloat(inputs.dimA) || 0, 0);
-    const dimB      = Math.max(parseFloat(inputs.dimB) || 0, 0);
-    const angleRow  = OFFSET_TABLE.find((o) => o.value === inputs.angle) ?? OFFSET_TABLE[3];
-    const gain      = GAIN[sizeKey] ?? 6;
-    const sizeStr   = SIZE_LABEL[sizeKey] ?? '3/4"';
+    const { bendType, dimA, dimB, angleRow, gain, sizeStr } = parseBend(inputs);
 
     if (bendType === "stub90") {
       const mark = Math.max(dimA - gain, 0);
       return [
         { label: "Mark Location (from end)", value: Math.round(mark * 100) / 100, unit: "in", highlight: true },
-        { label: "Gain / Deduct",            value: gain,  unit: `in (${sizeStr})` },
-        { label: "Finished Stub",            value: dimA,  unit: "in" },
+        { label: "Gain / Deduct",            value: gain, unit: `in (${sizeStr})` },
+        { label: "Finished Stub",            value: dimA, unit: "in" },
         { label: "Step 1", value: 0, unit: `Measure ${mark.toFixed(3)}" from conduit end` },
         { label: "Step 2", value: 0, unit: `Place bender arrow on mark; bend to 90\u00B0` },
         { label: "Step 3", value: 0, unit: `Check: stub should measure ${dimA}" from floor` },
@@ -110,7 +116,7 @@ export const conduitBend: Calculator = {
       return [
         { label: "Distance Between Marks", value: Math.round(between * 100) / 100, unit: "in", highlight: true },
         { label: "Shrink",                 value: Math.round(shrink * 100) / 100,  unit: "in (reduce total run)" },
-        { label: "Bend Angle",             value: parseFloat(angleRow.value),      unit: "\u00B0 per bend" },
+        { label: "Bend Angle",             value: parseFloat(angleRow.value), unit: "\u00B0 per bend" },
         { label: "Step 1", value: 0, unit: "Make 1st mark at your reference point" },
         { label: "Step 2", value: 0, unit: `Make 2nd mark ${between.toFixed(3)}" forward` },
         { label: "Step 3", value: 0, unit: `Bend ${angleRow.value}\u00B0 at 1st mark (arrow toward end)` },
@@ -119,8 +125,8 @@ export const conduitBend: Calculator = {
       ];
     }
     if (bendType === "saddle3") {
-      const spread = Math.round(dimA * 2.5   * 100) / 100;
-      const half   = Math.round(spread / 2   * 100) / 100;
+      const spread = Math.round(dimA * 2.5    * 100) / 100;
+      const half   = Math.round(spread / 2    * 100) / 100;
       const shrink = Math.round(dimA * 0.1875 * 100) / 100;
       return [
         { label: "Spread (outer to outer)", value: spread, unit: "in", highlight: true },
@@ -134,9 +140,9 @@ export const conduitBend: Calculator = {
       ];
     }
     if (bendType === "saddle4") {
-      const segLen    = Math.round(dimA * angleRow.mult       * 100) / 100;
-      const shrink    = Math.round(dimA * angleRow.shrink * 2 * 100) / 100;
-      const totalSpan = Math.round((segLen * 2 + dimB)        * 100) / 100;
+      const segLen    = Math.round(dimA * angleRow.mult        * 100) / 100;
+      const shrink    = Math.round(dimA * angleRow.shrink * 2  * 100) / 100;
+      const totalSpan = Math.round((segLen * 2 + dimB)         * 100) / 100;
       return [
         { label: "Total Span (A \u2192 D)", value: totalSpan, unit: "in", highlight: true },
         { label: "Segment (each side)",    value: segLen,    unit: `in at ${angleRow.value}\u00B0` },
@@ -149,6 +155,59 @@ export const conduitBend: Calculator = {
         { label: "Shrink Note", value: 0, unit: `Reduce run by ${shrink.toFixed(3)}"` },
       ];
     }
-    return [{ label: "Select a bend type", value: 0, unit: "", highlight: true }];
+    return [{ label: "Select a bend type", value: 0, unit: "" }];
+  },
+
+  computeSteps: (inputs) => {
+    const { bendType, dimA, dimB, angleRow, gain, sizeStr } = parseBend(inputs);
+
+    if (bendType === "stub90") {
+      const mark = Math.max(dimA - gain, 0);
+      return [
+        `Stub height wanted: ${dimA}"`,
+        `Bender gain (${sizeStr} conduit) = ${gain}"  (Ideal/Greenlee standard)`,
+        `Mark location = ${dimA}" \u2212 ${gain}" = ${mark.toFixed(3)}" from the end`,
+        `Place bender arrow at ${mark.toFixed(3)}" \u2192 bend to 90\u00B0 \u2192 finished stub = ${dimA}"`,
+      ];
+    }
+    if (bendType === "offset") {
+      const between = dimA * angleRow.mult;
+      const shrink  = dimA * angleRow.shrink;
+      return [
+        `Offset rise: ${dimA}"`,
+        `Bend angle: ${angleRow.value}\u00B0, multiplier = ${angleRow.mult}`,
+        `Distance between marks = ${dimA}" \u00D7 ${angleRow.mult} = ${between.toFixed(3)}"`,
+        `Shrink factor for ${angleRow.value}\u00B0 = ${angleRow.shrink}`,
+        `Shrink = ${dimA}" \u00D7 ${angleRow.shrink} = ${shrink.toFixed(3)}"`,
+        `Reduce total conduit run by ${shrink.toFixed(3)}"`,
+      ];
+    }
+    if (bendType === "saddle3") {
+      const spread = dimA * 2.5;
+      const half   = spread / 2;
+      const shrink = dimA * 0.1875;
+      return [
+        `Obstacle height: ${dimA}"`,
+        `Spread = obstacle \u00D7 2.5 = ${dimA}" \u00D7 2.5 = ${spread.toFixed(3)}"`,
+        `Center to each outer mark = ${spread.toFixed(3)}" \u00F7 2 = ${half.toFixed(3)}"`,
+        `Shrink factor (3-pt saddle) \u2248 3/16" per inch of rise`,
+        `Shrink = ${dimA}" \u00D7 0.1875 = ${shrink.toFixed(3)}"`,
+        `Bend sequence: 22.5\u00B0 at Mark A \u2192 45\u00B0 at center \u2192 22.5\u00B0 at Mark B`,
+      ];
+    }
+    if (bendType === "saddle4") {
+      const segLen    = dimA * angleRow.mult;
+      const shrink    = dimA * angleRow.shrink * 2;
+      const totalSpan = segLen * 2 + dimB;
+      return [
+        `Obstacle height: ${dimA}", width: ${dimB}", bend angle: ${angleRow.value}\u00B0`,
+        `Multiplier for ${angleRow.value}\u00B0 = ${angleRow.mult}`,
+        `Each segment = ${dimA}" \u00D7 ${angleRow.mult} = ${segLen.toFixed(3)}"`,
+        `Total span = ${segLen.toFixed(3)}" + ${dimB}" + ${segLen.toFixed(3)}" = ${totalSpan.toFixed(3)}"`,
+        `Shrink per side = ${dimA}" \u00D7 ${angleRow.shrink} = ${(dimA * angleRow.shrink).toFixed(3)}"`,
+        `Total shrink (both sides) = ${shrink.toFixed(3)}"`,
+      ];
+    }
+    return [];
   },
 };

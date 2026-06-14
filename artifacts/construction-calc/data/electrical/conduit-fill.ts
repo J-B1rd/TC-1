@@ -33,6 +33,24 @@ const CONDUIT_AREAS: {
   { label: '4"',     value: "4",    emt: 6.046, pvc40: 6.046, pvc80: 5.320, rmc: 6.046 },
 ];
 
+const TYPE_LABEL: Record<string, string> = {
+  emt: "EMT", pvc40: "PVC Sch 40", pvc80: "PVC Sch 80", rmc: "RMC",
+};
+
+function parseCF(inputs: Record<string, string>) {
+  const count       = Math.max(Math.round(parseFloat(inputs.count) || 1), 1);
+  const sizeRow     = CONDUIT_AREAS.find((c) => c.value === inputs.tradeSize) ?? CONDUIT_AREAS[1];
+  const typeKey     = (inputs.conduitType || "emt") as "emt" | "pvc40" | "pvc80" | "rmc";
+  const conduitArea = sizeRow[typeKey];
+  const wireArea    = WIRE_AREAS[inputs.wireType]?.[inputs.wireSize] ?? 0;
+  const totalWire   = wireArea * count;
+  const fillPct     = conduitArea > 0 ? (totalWire / conduitArea) * 100 : 0;
+  const necLimit    = count === 1 ? 53 : count === 2 ? 31 : 40;
+  const maxCond     = conduitArea > 0 && wireArea > 0
+    ? Math.floor((conduitArea * necLimit / 100) / wireArea) : 0;
+  return { count, sizeRow, typeKey, conduitArea, wireArea, totalWire, fillPct, necLimit, maxCond };
+}
+
 export const conduitFill: Calculator = {
   id: "conduit-fill",
   name: "Conduit Fill",
@@ -113,33 +131,39 @@ export const conduitFill: Calculator = {
       type: "number", defaultValue: "3", min: 1, max: 200, integer: true,
     },
   ],
-  calculate: (inputs) => {
-    const count       = Math.max(Math.round(parseFloat(inputs.count) || 1), 1);
-    const sizeRow     = CONDUIT_AREAS.find((c) => c.value === inputs.tradeSize) ?? CONDUIT_AREAS[1];
-    const typeKey     = inputs.conduitType as "emt" | "pvc40" | "pvc80" | "rmc";
-    const conduitArea = sizeRow[typeKey];
-    const wireArea    = WIRE_AREAS[inputs.wireType]?.[inputs.wireSize] ?? 0;
-    const totalWire   = wireArea * count;
-    const fillPct     = conduitArea > 0 ? (totalWire / conduitArea) * 100 : 0;
-    const necLimit    = count === 1 ? 53 : count === 2 ? 31 : 40;
-    const maxCond     = conduitArea > 0 && wireArea > 0
-      ? Math.floor((conduitArea * necLimit / 100) / wireArea) : 0;
 
+  calculate: (inputs) => {
+    const { count, sizeRow, typeKey, conduitArea, wireArea, totalWire, fillPct, necLimit, maxCond } = parseCF(inputs);
     const pass = fillPct <= necLimit;
-    const typeLabel: Record<string, string> = {
-      emt: "EMT", pvc40: "PVC Sch 40", pvc80: "PVC Sch 80", rmc: "RMC",
-    };
 
     return [
-      { label: "Fill Percentage",           value: Math.round(fillPct * 10) / 10, unit: "%", highlight: true },
-      { label: "NEC Limit",                 value: necLimit, unit: "%" },
-      { label: "Status",                    value: 0, unit: pass
+      { label: "Fill Percentage",       value: Math.round(fillPct * 10) / 10, unit: "%", highlight: true },
+      { label: "NEC Limit",             value: necLimit, unit: "%" },
+      { label: "Status",                value: 0, unit: pass
           ? `\u2713 PASS \u2014 ${fillPct.toFixed(1)}% \u2264 ${necLimit}%`
           : `\u2717 OVER LIMIT \u2014 ${fillPct.toFixed(1)}% > ${necLimit}%` },
       { label: `Max conductors (${inputs.wireSize} AWG ${inputs.wireType.toUpperCase()})`,
-        value: maxCond, unit: `in ${sizeRow.label} ${typeLabel[typeKey]}` },
-      { label: "Total Wire Area",           value: Math.round(totalWire * 10000) / 10000, unit: "in\u00B2" },
-      { label: "Conduit Internal Area",     value: conduitArea, unit: `in\u00B2 (${sizeRow.label} ${typeLabel[typeKey]})` },
+        value: maxCond, unit: `in ${sizeRow.label} ${TYPE_LABEL[typeKey]}` },
+      { label: "Total Wire Area",       value: Math.round(totalWire * 10000) / 10000, unit: "in\u00B2" },
+      { label: "Conduit Internal Area", value: conduitArea,
+        unit: `in\u00B2 (${sizeRow.label} ${TYPE_LABEL[typeKey]})` },
+    ];
+  },
+
+  computeSteps: (inputs) => {
+    const { count, sizeRow, typeKey, conduitArea, wireArea, totalWire, fillPct, necLimit, maxCond } = parseCF(inputs);
+    const wLabel = `${inputs.wireSize} AWG ${inputs.wireType.toUpperCase()}`;
+    const cLabel = `${sizeRow.label} ${TYPE_LABEL[typeKey]}`;
+    const limitReason = count === 1 ? "1 conductor \u2192 53% max" : count === 2 ? "2 conductors \u2192 31% max" : "3+ conductors \u2192 40% max";
+    const pass = fillPct <= necLimit;
+    return [
+      `Wire area (${wLabel}) = ${wireArea} in\u00B2  (NEC Ch.\u20099 Table\u20095)`,
+      `Total wire area: ${count} conductors \u00D7 ${wireArea} in\u00B2 = ${totalWire.toFixed(5)} in\u00B2`,
+      `Conduit area (${cLabel}) = ${conduitArea} in\u00B2  (NEC Ch.\u20099 Table\u20094)`,
+      `Fill % = ${totalWire.toFixed(5)} \u00F7 ${conduitArea} \u00D7 100 = ${fillPct.toFixed(2)}%`,
+      `NEC fill limit: ${limitReason}`,
+      `${fillPct.toFixed(2)}% ${pass ? "\u2264" : ">"} ${necLimit}%  \u2192  ${pass ? "\u2713 PASS" : "\u2717 OVER"}`,
+      `Max conductors: \u230A${conduitArea} \u00D7 ${necLimit / 100} \u00F7 ${wireArea}\u230B = ${maxCond} conductors`,
     ];
   },
 };
